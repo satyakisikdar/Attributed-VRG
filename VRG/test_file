@@ -1,0 +1,13 @@
+chosen_nt_node = max(self.current_non_terminal_nodes, key=lambda nt: int(nt.strip('nt')))  # choose the non-terminal with max id
+
+        chosen_nt: NonTerminal = self._gen_graph.nodes[chosen_nt_node]['nt']
+        rule_idx = chosen_nt.id - 1
+
+        chosen_rule = self.grammar.rule_list[rule_idx]
+        assert chosen_rule.lhs_nt.size == chosen_nt.size, 'Non-terminal size mismatch'
+
+        correspondence = {}
+        for node, d in chosen_rule.graph.nodes(data=True):
+            if 'nt' not in d:
+                correspondence[node] = d['actual_label']
+        return chosen_nt_node, chosen_rule, chosen_rule.nodes_covered, correspondence
