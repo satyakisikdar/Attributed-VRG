@@ -136,7 +136,7 @@ dependencies:
     - keras-preprocessing==1.1.2
     - leidenalg==0.8.0
     - markdown==3.2.2
-    - networkx==2.4
+    - networkx>=2.4
     - numpy==1.18.4
     - opencv-python==4.3.0.36
     - opt-einsum==3.2.1
