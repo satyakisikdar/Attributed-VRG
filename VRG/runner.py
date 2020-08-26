@@ -2,17 +2,15 @@ import argparse
 import logging
 import math
 import os
-import sys;
+import sys; sys.path.extend(['../'])
 from pathlib import Path
 
-sys.path.extend(['../'])
 from time import time
 from typing import Any, List, Union, Dict
 
 import networkx as nx
-import seaborn as sns;
+import seaborn as sns; sns.set_style('white')
 
-sns.set_style('white')
 from tqdm import tqdm
 
 import VRG.src.partitions as partitions
@@ -20,12 +18,12 @@ from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.Tree import create_tree
 from VRG.src.VRG import VRG, NCE
 from VRG.src.extract import NCEExtractor, VRGExtractor
-from VRG.src.generate import RandomGenerator, NCEGenerator
-from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer
+from VRG.src.generate import RandomGenerator, NCEGenerator, AttributedRandomGenerator
+from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer, get_mixing_dict
 
 sys.setrecursionlimit(1_000_000)
-# logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-logging.basicConfig(level=logging.ERROR, format="%(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(message)s")
+# logging.basicConfig(level=logging.ERROR, format="%(message)s")
 logging.getLogger('matplotlib.font_manager').disabled = True
 
 
@@ -194,8 +192,7 @@ def generate_graphs(grammar: Union[VRG, NCE], num_graphs: int, outdir: str = 'du
             gen = RandomGenerator(grammar=grammar)
         else:
             assert attr_name is not None
-            raise NotImplementedError(f'Not implemented yet!')
-            # gen = AttributedRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name)
+            gen = AttributedRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name)
     elif isinstance(grammar, NCE):
         gen = NCEGenerator(grammar=grammar)
     else:
@@ -232,16 +229,16 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
 
-    name, attr_name, use_cluster_pickle, use_grammar_pickle, clustering, grammar_type, mu = args.graph, args.attr_name,\
-                                                                                        args.cluster_pickle, args.grammar_pickle,\
-                                                                                        args.clustering, args.type, args.mu
+    name, attr_name, use_cluster_pickle, \
+        use_grammar_pickle, clustering, grammar_type, mu, n = args.graph, args.attr_name, args.cluster_pickle,\
+                                                              args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
+    name = 'sample'; attr_name = 'color'; use_grammar_pickle = True; use_cluster_pickle = True; n = 5; mu = 3
 
     g = get_graph(name)
     if attr_name != '':
-        raise NotImplementedError(f'Attributes not implemented yet')
-        # mix_dict = get_mixing_dict(g, attr_name=attr_name)
-        # print('Mixing dict:', mix_dict)
+        mix_dict = get_mixing_dict(g, attr_name=attr_name)
+        print('Mixing dict:', mix_dict)
     else:
         mix_dict = None
 
@@ -249,4 +246,4 @@ if __name__ == '__main__':
                        use_grammar_pickle=use_grammar_pickle, use_cluster_pickle=use_cluster_pickle)[0]
 
     print(vrg)
-    graphs = generate_graphs(grammar=vrg, num_graphs=args.n)
+    graphs = generate_graphs(grammar=vrg, num_graphs=n, mixing_dict=mix_dict, attr_name=attr_name)
