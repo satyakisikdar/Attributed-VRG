@@ -139,6 +139,13 @@ class VRG(BaseVRG):
 
         return rule.id
 
+    def copy(self):
+        vrg_copy = VRG(type=self.type, clustering=self.clustering, name=self.name, mu=self.mu)
+        vrg_copy.rule_list = self.rule_list[:]
+        vrg_copy.rule_dict = dict(self.rule_dict)
+        vrg_copy.cost = self.cost
+        vrg_copy.num_rules = self.num_rules
+        return vrg_copy
 
 class NCE:
     """
@@ -162,14 +169,6 @@ class NCE:
 
         self.cost: int = 0  # the MDL of the rules
         self.num_rules: int = 0  # number of active rules
-
-    def copy(self):
-        vrg_copy = NCE(type=self.type, clustering=self.clustering, name=self.name, mu=self.mu)
-        vrg_copy.rule_list = self.rule_list[:]
-        vrg_copy.rule_dict = dict(self.rule_dict)
-        vrg_copy.cost = self.cost
-        vrg_copy.num_rules = self.num_rules
-        return vrg_copy
 
     def __len__(self):
         return len(self.rule_list)
