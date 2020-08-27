@@ -11,9 +11,9 @@ from tqdm import tqdm
 
 from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.NonTerminal import NonTerminal
-from VRG.src.Rule import VRGRule, NCERule
+from VRG.src.Rule import VRGRule, NCERule, AVRGRule
 from VRG.src.Tree import TreeNode, get_leaves
-from VRG.src.VRG import VRG, NCE
+from VRG.src.VRG import VRG, NCE, AttributedVRG
 from VRG.src.utils import find_boundary_edges, set_boundary_degrees, timer
 
 
@@ -241,6 +241,36 @@ class VRGExtractor(BaseExtractor):
         nt = NonTerminal(size=len(boundary_edges), nodes_covered=nodes_covered)
 
         rule = VRGRule(lhs_nt=nt, graph=sg)
+        set_boundary_degrees(self.g, rule.graph)
+        rule.generalize_rhs_and_store_correspondence()
+
+        return subtree, rule, boundary_edges
+
+
+class AVRGExtractor(VRGExtractor):
+    def __init__(self, g: LightMultiGraph, type: str, root: TreeNode, mu: int, clustering: str, attr_name: str):
+        super().__init__(g=g, type=type, root=root, mu=mu, clustering=clustering)
+        self.attr_name = attr_name
+        self.grammar = AttributedVRG(clustering=clustering, mu=mu, name=g.name, attr_name=attr_name)
+        return
+
+    def extract_rule(self, tnode: TreeNode) -> Tuple[Set, AVRGRule, List]:
+        """
+        Extract AVRG rule
+        :param tnode:
+        :return:
+        """
+        subtree = get_leaves(tnode)
+        sg = self.g.subgraph(subtree).copy()
+        assert isinstance(sg, LightMultiGraph)
+        # assert nx.is_connected(sg), 'Subgraph is not connected'
+        boundary_edges = find_boundary_edges(self.g, subtree)
+
+        # nodes_covered = subtree  # for now
+        nodes_covered = set(filter(lambda node: isinstance(node, int), subtree))
+        nt = NonTerminal(size=len(boundary_edges), nodes_covered=nodes_covered)
+
+        rule = AVRGRule(lhs_nt=nt, graph=sg, attr_name=self.attr_name)
         set_boundary_degrees(self.g, rule.graph)
         rule.generalize_rhs_and_store_correspondence()
 

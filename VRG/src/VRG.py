@@ -147,6 +147,13 @@ class VRG(BaseVRG):
         vrg_copy.num_rules = self.num_rules
         return vrg_copy
 
+
+class AttributedVRG(VRG):
+    def __init__(self, clustering: str, name: str, mu: int, attr_name: str):
+        super().__init__(type='A-VRG', clustering=clustering, name=name, mu=mu)
+        self.attr_name = attr_name
+
+
 class NCE:
     """
     Class for Vertex Replacement Grammars - for isomorphic graphs

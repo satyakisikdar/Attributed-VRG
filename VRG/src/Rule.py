@@ -5,7 +5,7 @@ import networkx as nx
 import VRG.src.MDL as MDL
 from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.NonTerminal import NonTerminal
-from VRG.src.utils import load_pickle, node_matcher_b_deg, edge_matcher
+from VRG.src.utils import load_pickle, edge_matcher
 
 
 class BaseRule:
@@ -60,11 +60,12 @@ class BaseRule:
         return st
 
     def __eq__(self, other) -> bool:  # two rules are equal if the LHSs match and RHSs are isomorphic
+        import networkx.algorithms.isomorphism as iso
         isomorphic = self.lhs_nt.size == other.lhs_nt.size  # first check if the LHS are the same size
 
         g1 = nx.convert_node_labels_to_integers(self.graph)
         g2 = nx.convert_node_labels_to_integers(other.graph)
-        isomorphic = isomorphic and nx.is_isomorphic(g1, g2, node_match=node_matcher_b_deg,  # only match b_degs
+        isomorphic = isomorphic and nx.is_isomorphic(g1, g2, node_match=iso.numerical_node_match('b_deg', default=0),
                                                      edge_match=edge_matcher)  # use the node and edge matcher
 
         return isomorphic
@@ -134,10 +135,22 @@ class BaseRule:
         nx.set_node_attributes(self.graph, name='actual_label', values=actual_label)
         return
 
+    def update(self, new_rule):
+        """
+        Update existing rule
+            - update frequency
+            - update node correspondences - actual_labels
+
+        :param new_rule:
+        :return:
+        """
+        self.frequency += 1  # update frequency
+        return
+
 
 class VRGRule(BaseRule):
     """
-    Rule class for Partial option
+    Rule class for vanilla VRGs
     """
     def __init__(self, lhs_nt, graph, level=0, cost=0, frequency=1):
         super().__init__(lhs_nt=lhs_nt, graph=graph, level=level, cost=cost, frequency=frequency)
@@ -161,21 +174,35 @@ class VRGRule(BaseRule):
                     self.graph.order() * MDL.gamma_code(max_boundary_degree + 1)
         return
 
-    def update(self, new_rule):
-        """
-        Update existing rule
-            - update frequency
-            - update node correspondences - actual_labels
 
-        :param new_rule:
+class AVRGRule(BaseRule):
+    """
+    Rules for attributed VRG
+    """
+    def __init__(self, lhs_nt: NonTerminal, graph: LightMultiGraph, attr_name: str):
+        super().__init__(lhs_nt, graph)
+        self.attr_name = attr_name
+        return
+
+    def calculate_cost(self) -> float:
+        # compute cost of rule using MDL
+        return -1
+
+    def __eq__(self, other) -> bool:
+        """
+        Check for rule isomorphism
+        :param other:
         :return:
         """
-        self.frequency += 1  # update frequency
-        # self.nodes_covered.append(new_rule.nodes_covered[0])  # update the nodes covered
-        # for n, d in new_rule.graph.nodes(data=True):  # update the node labels
-        #     if 'nt' not in d:  # only deal with terminal nodes
-        #         self.graph.nodes[n]['actual_labels'].append(d['actual_labels'][0])
-        return
+        import networkx.algorithms.isomorphism as iso
+        isomorphic = self.lhs_nt.size == other.lhs_nt.size  # first check if the LHS are the same size
+
+        g1 = nx.convert_node_labels_to_integers(self.graph)
+        g2 = nx.convert_node_labels_to_integers(other.graph)
+        isomorphic = isomorphic and nx.is_isomorphic(g1, g2, node_match=iso.categorical_node_match(self.attr_name, ''),
+                                                     edge_match=edge_matcher)  # use the node and edge matcher
+
+        return isomorphic
 
 
 class NCERule(BaseRule):
@@ -208,18 +235,6 @@ class NCERule(BaseRule):
                 self.boundary_nodes.add(u)
         # logging.debug(f'Boundary nodes: {self.boundary_nodes} edges: {self.boundary_edges}')
         self.boundary_edges = boundary_edges
-        return
-
-    def update(self, new_rule):
-        """
-        Update existing rule
-            - update frequency
-            - update node correspondences - actual_labels
-
-        :param new_rule:
-        :return:
-        """
-        self.frequency += 1  # update frequency
         return
 
 

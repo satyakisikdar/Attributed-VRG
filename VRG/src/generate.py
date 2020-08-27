@@ -111,11 +111,14 @@ class BaseGenerator(abc.ABC):
             g = self._gen()
             # nx_g = nx.Graph(g)  # turn the graph into NetworkX graph
             nx_g = nx.Graph()
+            for k, v in g.graph.items():  # copy over the graph level attributes
+                nx_g.graph[k] = v
+
             for n, d in g.nodes(data=True):
                 nx_g.add_node(n, **d)
             nx_g.add_edges_from(g.edges())
             nx_g.remove_edges_from(nx.selfloop_edges(g))
-            logging.error(f'({i+1:02d}) Generated graph: n={nx_g.order():_d} m={nx_g.size():_d}')
+            # logging.error(f'({i+1:02d}) Generated graph: n={nx_g.order():_d} m={nx_g.size():_d}')
             self.generated_graphs.append(nx_g)
 
         return self.generated_graphs
@@ -164,7 +167,7 @@ class RandomGenerator(BaseGenerator):
             self.current_non_terminal_nodes.remove(chosen_nt_node)  # remove the non-terminal from the set
             self.update_graph(chosen_rule=chosen_rule, chosen_nt_node=chosen_nt_node)
 
-        logging.debug(f'Generated graph: n={self._gen_graph.order()} m={self._gen_graph.size()}')
+        logging.debug(f'Generated graph: n={self._gen_graph.order():_d} m={self._gen_graph.size():_d}')
         return self._gen_graph
 
 
@@ -176,7 +179,30 @@ class AttributedRandomGenerator(RandomGenerator):
         super().__init__(grammar)
         self.mixing_dict = mixing_dict
         self.attr_name = attr_name
+        self.fancy_rewirings = 0
+        self.total_rewirings = 0
         return
+
+    def _gen(self) -> LightMultiGraph:
+        self.fancy_rewirings = 0  # reset the counts
+        self.total_rewirings = 0
+        starting_nt = self.grammar.rule_dict[0][0].lhs_nt
+
+        self._gen_graph = LightMultiGraph()
+        self._gen_graph.add_node(0, nt=starting_nt)
+        self.current_non_terminal_nodes = {0}  # first non-terminal is node 0
+
+        while len(self.current_non_terminal_nodes) != 0:  # continue until there are non-terminals remaining
+            chosen_nt_node, chosen_rule, _, _ = self.select_rule()  # throw out the set of covered nodes and node correspondence
+            self.current_non_terminal_nodes.remove(chosen_nt_node)  # remove the non-terminal from the set
+            self.update_graph(chosen_rule=chosen_rule, chosen_nt_node=chosen_nt_node)
+
+        logging.error(f'Generated graph: n={self._gen_graph.order():_d} m={self._gen_graph.size():_d} fancy rewirings'
+                      f'({self.fancy_rewirings:_d} / {self.total_rewirings:_d}) {round(100 * self.fancy_rewirings/self.total_rewirings, 3)}%')
+
+        self._gen_graph.graph['total_rewirings'] = self.total_rewirings
+        self._gen_graph.graph['fancy_rewirings'] = self.fancy_rewirings
+        return self._gen_graph
 
     def select_rule(self) -> Tuple[int, VRGRule, Set[int], Dict]:
         """
@@ -191,11 +217,10 @@ class AttributedRandomGenerator(RandomGenerator):
         if len(rule_candidates) == 1:
             rule_idx = 0  # pick the only rule in the list
         else:
-            rule_idx = -1  # force to pick the last rule in case of ties  # TODO: fix this
-            # weights = np.array([rule.frequency for rule in rule_candidates])
-            # weights = weights / np.sum(weights)  # normalize into probabilities
-            # rule_idx = int(
-            #     np.random.choice(range(len(rule_candidates)), size=1, p=weights))  # pick based on probability
+            weights = np.array([rule.frequency for rule in rule_candidates])
+            weights = weights / np.sum(weights)  # normalize into probabilities
+            rule_idx = int(
+                np.random.choice(range(len(rule_candidates)), size=1, p=weights))  # pick based on probability
 
         return chosen_nt_node, rule_candidates[rule_idx], set(), {}
 
@@ -216,6 +241,8 @@ class AttributedRandomGenerator(RandomGenerator):
 
         broken_edges = find_boundary_edges(self._gen_graph, {existing_node})  # find the broken edges
         assert len(broken_edges) == chosen_nt.size, f'Incorrect #broken edges: {len(broken_edges)} != {chosen_nt.size}'
+
+        self.total_rewirings += len(broken_edges)  # all the broken edges need to be rewired
 
         node_count = max(self._gen_graph.nodes) + 1  # number of nodes in the present graph
         self._gen_graph.remove_node(existing_node)  # remove the existing node from the graph
@@ -280,6 +307,7 @@ class AttributedRandomGenerator(RandomGenerator):
                     # 3. Add the edge to gen_graph
                     logging.debug(f'Adding broken edge {(node_label[rule_t], graph_t)} the fancy way')
                     self._gen_graph.add_edge(graph_t, node_label[rule_t])  # node_label stores the actual label in gen_graph
+                    self.fancy_rewirings += 1  # fancy rewiring
 
                     # 3. update b_deg for the rule terminal
                     b_degs[rule_t] -= 1

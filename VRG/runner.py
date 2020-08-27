@@ -16,14 +16,14 @@ from tqdm import tqdm
 import VRG.src.partitions as partitions
 from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.Tree import create_tree
-from VRG.src.VRG import VRG, NCE
-from VRG.src.extract import NCEExtractor, VRGExtractor
+from VRG.src.VRG import VRG, NCE, AttributedVRG
+from VRG.src.extract import NCEExtractor, VRGExtractor, AVRGExtractor
 from VRG.src.generate import RandomGenerator, NCEGenerator, AttributedRandomGenerator
-from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer, get_mixing_dict
+from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer
 
 sys.setrecursionlimit(1_000_000)
-logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-# logging.basicConfig(level=logging.ERROR, format="%(message)s")
+# logging.basicConfig(level=logging.DEBUG, format="%(message)s")
+logging.basicConfig(level=logging.ERROR, format="%(message)s")
 logging.getLogger('matplotlib.font_manager').disabled = True
 
 
@@ -144,7 +144,7 @@ def make_dirs(outdir: str, name: str) -> None:
 
 
 def get_grammars(name: str, clustering: str, grammar_type: str, mu: int, input_graph: nx.Graph, use_grammar_pickle: bool,
-                 use_cluster_pickle: bool, count: int = 1) -> List[Union[VRG, NCE]]:
+                 use_cluster_pickle: bool, count: int = 1, attr_name: str = '') -> List[Union[VRG, NCE]]:
     """
     Dump the stats
     :return:
@@ -172,10 +172,14 @@ def get_grammars(name: str, clustering: str, grammar_type: str, mu: int, input_g
                 g_copy.add_node(n, **d)
             g_copy.add_edges_from(input_graph.edges(data=True))
             g_copy.name = name
-            if 'VRG' in grammar_type:
+            if grammar_type == 'VRG':
                 extractor = VRGExtractor(g=g_copy, type='mu_random', mu=mu, root=root, clustering=clustering)
-            elif 'NCE' in grammar_type:
+            elif grammar_type == 'NCE':
                 extractor = NCEExtractor(g=g_copy, type='mu_random', mu=mu, root=root, clustering=clustering)
+            elif grammar_type == 'AVRG':
+                assert attr_name != ''
+                extractor = AVRGExtractor(g=g_copy, attr_name=attr_name, type='mu_random', clustering=clustering,
+                                          mu=mu, root=root)
             else:
                 raise NotImplementedError(f'Invalid grammar type {grammar_type!r}')
 
@@ -185,21 +189,22 @@ def get_grammars(name: str, clustering: str, grammar_type: str, mu: int, input_g
     return grammars
 
 
-def generate_graphs(grammar: Union[VRG, NCE], num_graphs: int, outdir: str = 'dumps', mixing_dict: Union[None, Dict] = None,
-                    attr_name: Union[str, None] = None) -> List[nx.Graph]:
-    if isinstance(grammar, VRG):
-        if mixing_dict is None:
-            gen = RandomGenerator(grammar=grammar)
-        else:
-            assert attr_name is not None
-            gen = AttributedRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name)
+def generate_graphs(grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, outdir: str = 'dumps',
+                    mixing_dict: Union[None, Dict] = None, attr_name: Union[str, None] = None) -> List[nx.Graph]:
+
+    if isinstance(grammar, AttributedVRG):
+        assert attr_name != ''
+        gen = AttributedRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name)
+    elif isinstance(grammar, VRG):
+        gen = RandomGenerator(grammar=grammar)
     elif isinstance(grammar, NCE):
         gen = NCEGenerator(grammar=grammar)
     else:
         raise NotImplementedError(f'Invalid grammar type {type(grammar)!r}')
+
     graphs = gen.generate(num_graphs=num_graphs)
 
-    graphs_filename = f'{outdir}/graphs/{name}/{grammar_type}_{clustering}_{mu}.pkl'
+    graphs_filename = f'{outdir}/graphs/{name}/{grammar_type}_{clustering}_{mu}_{len(graphs)}.pkl'
     dump_pickle(graphs, graphs_filename)
 
     return graphs
@@ -233,17 +238,20 @@ if __name__ == '__main__':
         use_grammar_pickle, clustering, grammar_type, mu, n = args.graph, args.attr_name, args.cluster_pickle,\
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
-    name = 'sample'; attr_name = 'color'; use_grammar_pickle = True; use_cluster_pickle = True; n = 5; mu = 3
+    # name = 'sample'; attr_name = 'color'; mu =3; grammar_type = 'AVRG'
+    name = 'karate'; attr_name = 'club'; mu = 6; grammar_type = 'AVRG'
+    use_grammar_pickle = True; use_cluster_pickle = True; n = 10
 
     g = get_graph(name)
     if attr_name != '':
-        mix_dict = get_mixing_dict(g, attr_name=attr_name)
+        mix_dict = nx.attribute_mixing_dict(g, attribute=attr_name, normalized=True)
         print('Mixing dict:', mix_dict)
     else:
         mix_dict = None
 
     vrg = get_grammars(name=name, clustering=clustering, grammar_type=grammar_type, input_graph=g, mu=mu,
-                       use_grammar_pickle=use_grammar_pickle, use_cluster_pickle=use_cluster_pickle)[0]
+                       use_grammar_pickle=use_grammar_pickle, use_cluster_pickle=use_cluster_pickle, attr_name=attr_name)[0]
 
     print(vrg)
     graphs = generate_graphs(grammar=vrg, num_graphs=n, mixing_dict=mix_dict, attr_name=attr_name)
+    print(graphs)
