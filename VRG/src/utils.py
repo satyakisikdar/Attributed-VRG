@@ -284,11 +284,13 @@ class ColorPrint:
         # sys.stdout.write(message + end)
 
 
-def plot_graph(g, ax=None, title=''):
-    color_map = {'Mr. Hi': '#FF6961', 'Officer': '#6495ed'}  # blue and red
+def plot_graph(g, ax=None, title='', attr_name='', mixing_dict={}):
+    unique_values = set(mixing_dict.values())
+    colors = sns.color_palette('pastel', n_colors=len(unique_values))
+    color_map = {val: col for val, col in zip(unique_values, colors)}
 
     try:
-        colors = [color_map[d['club']] for _, d in g.nodes(data=True)]
+        colors = [color_map[d[attr_name]] for _, d in g.nodes(data=True)]
     except KeyError:
         colors = '#77dd77'
     pos = nx.spring_layout(g)
@@ -300,7 +302,7 @@ def plot_graph(g, ax=None, title=''):
     return
 
 
-def grid_plot(graphs, graph_name=''):
+def grid_plot(graphs, graph_name='', attr_name='', mixing_dict={}):
     # todo keep the positions of the constant nodes fixed
     rows, cols = 2, 4
     plt.rcParams['figure.figsize'] = [30, 15]
@@ -311,11 +313,11 @@ def grid_plot(graphs, graph_name=''):
         ax = fig.add_subplot(box)
         g = graphs[i]
         deg_as = round(nx.degree_assortativity_coefficient(g), 3)
-        attr_as = round(nx.attribute_assortativity_coefficient(g, attribute='club'), 3)
+        attr_as = round(nx.attribute_assortativity_coefficient(g, attribute=attr_name), 3)
         plot_graph(g, ax=ax, title=f'g{i + 1} {g.order(), g.size()} degree as: {deg_as} att as: {attr_as}')
 
     plt.tight_layout()
-    # plt.suptitle(f'{graph_name}', y=1, fontsize=10)
+    plt.suptitle(f'{graph_name}', y=1, fontsize=10)
     plt.show()
 
 
@@ -367,32 +369,6 @@ def igraph_to_nx(ig_g: ig.Graph) -> nx.Graph:
         nx_g.add_edge(name[e.source], name[e.target])
 
     return nx_g
-
-
-def get_mixing_dict(g: nx.Graph, attr_name: str) -> Dict:
-    """
-    Return a mixing matrix -- a nested dictionary --
-    d[attr1][attr2] will have probability of edges between nodes of attr1 and attr2
-    """
-    mixing_dict = {}
-    attr_d = nx.get_node_attributes(g, name=attr_name)
-    if len(attr_d) == 0:
-        logging.error(f'Invalid attribute {attr_name!r}!')
-        return mixing_dict
-
-    classes = set(attr_d.values())  # unique values
-    for cls_1 in classes:
-        mixing_dict[cls_1] = {}
-        for cls_2 in classes:
-            mixing_dict[cls_1][cls_2] = 0
-
-    for u, v in g.edges():
-        u_attr, v_attr = attr_d[u], attr_d[v]
-        mixing_dict[u_attr][v_attr] += 1 / g.size()
-        if u_attr != v_attr:  # prevents double counting
-            mixing_dict[v_attr][u_attr] += 1 / g.size()
-
-    return mixing_dict
 
 
 def get_assortativity(g: nx.Graph, attr_name: str):
