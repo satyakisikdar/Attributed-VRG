@@ -1,0 +1,10 @@
+MEX_SRC/build
+MEX_SRC/genlouvain_mex.xcodeproj/project.xcworkspace
+MEX_SRC/genlouvain_mex.xcodeproj/xcuserdata
+*.dSYM
+*.zip
+Bipartite
+Info.plist
+*.d
+*.dia
+*.o
