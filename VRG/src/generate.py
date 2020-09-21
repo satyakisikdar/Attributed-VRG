@@ -302,7 +302,7 @@ class AttributedRandomGenerator(RandomGenerator):
                             attr_2 = chosen_rule.graph.nodes[rule_t][self.attr_name]
                         except KeyError:
                             attr_2 = chosen_rule.graph.nodes[rule_t]['attr_dict'][self.attr_name]
-                        p = self.mixing_dict[attr_1][attr_2]  # probability of edge  # TODO: check for bipartite graphs
+                        p = self.mixing_dict[attr_1].get(attr_2, 0)  # probability of edge  # TODO: check for bipartite graphs
                         wts.append(p)
 
                     rule_t = random.choices(rule_terminal_list, weights=wts, k=1)[0]
