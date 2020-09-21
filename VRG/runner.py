@@ -6,7 +6,7 @@ import sys;
 
 from VRG.src.consensus_clustering import get_consensus_root
 
-sys.path.extend(['../'])
+sys.path.extend(['../', '../../'])
 from pathlib import Path
 
 from time import time
@@ -249,8 +249,8 @@ if __name__ == '__main__':
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
     # name = 'sample'; attr_name = 'color'; mu =3; grammar_type = 'AVRG'
-    name = 'polblogs'; attr_name = 'value'; mu = 6; grammar_type = 'AVRG'
-    use_grammar_pickle = True; use_cluster_pickle = True; n = 10
+    name = 'polblogs'; attr_name = 'value'; mu = 60; grammar_type = 'AVRG'
+    use_grammar_pickle = False; use_cluster_pickle = True; n = 10
 
     g = get_graph(name)
     g.name = name
