@@ -44,7 +44,7 @@ def run_matlab_code(g, gname):
         'addpath(genpath(\'./src/matlab_clustering\'));',
         'cd src/matlab_clustering/HierarchicalConsensus;',
         f'A = dlmread(\'./data/{gname}.mat\');',
-        'S = exponentialSamples(A, 500);',
+        'S = exponentialSamples(A, 2000);',
         '[Sc, Tree] = hierarchicalConsensus(S);',
         f'dlmwrite("./data/{gname}_sc.vec", Sc, \' \');',
         f'dlmwrite("./data/{gname}_tree.mat", Tree, \' \');'
