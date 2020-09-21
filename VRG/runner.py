@@ -10,7 +10,7 @@ sys.path.extend(['../', '../../'])
 from pathlib import Path
 
 from time import time
-from typing import Any, List, Union, Dict
+from typing import Any, List, Union, Dict, Tuple
 
 import networkx as nx
 import seaborn as sns; sns.set_style('white')
@@ -159,8 +159,8 @@ def make_dirs(outdir: str, name: str) -> None:
     return
 
 
-def get_grammars(name: str, clustering: str, grammar_type: str, mu: int, input_graph: nx.Graph, use_grammar_pickle: bool,
-                 use_cluster_pickle: bool, count: int = 1, attr_name: str = '') -> List[Union[VRG, NCE]]:
+def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: int, input_graph: nx.Graph,
+                 use_grammar_pickle: bool, use_cluster_pickle: bool, count: int = 1, attr_name: str = '') -> List[Union[VRG, NCE]]:
     """
     Dump the stats
     :return:
@@ -172,7 +172,7 @@ def get_grammars(name: str, clustering: str, grammar_type: str, mu: int, input_g
     grammars = []
 
     for i in range(count):
-        grammar_filename = f'{outdir}/grammars/{name}/{grammar_type}_{clustering}_{mu}_{i}.pkl'
+        grammar_filename = f'{outdir}/grammars/{name}/{grammar_type[0]}-{grammar_type[1]}_{clustering}_{mu}_{i}.pkl'
         if use_grammar_pickle and check_file_exists(grammar_filename):
             logging.error(f'Using pickled grammar from {grammar_filename!r}')
             grammar = load_pickle(grammar_filename)
@@ -185,18 +185,19 @@ def get_grammars(name: str, clustering: str, grammar_type: str, mu: int, input_g
                 root = create_tree(list_of_list_clusters)
             else:
                 root = list_of_list_clusters
+
             g_copy = LightMultiGraph()
             for n, d in input_graph.nodes(data=True):
                 g_copy.add_node(n, **d)
             g_copy.add_edges_from(input_graph.edges(data=True))
             g_copy.name = name
-            if grammar_type == 'VRG':
-                extractor = VRGExtractor(g=g_copy, type='mu_random', mu=mu, root=root, clustering=clustering)
-            elif grammar_type == 'NCE':
-                extractor = NCEExtractor(g=g_copy, type='mu_random', mu=mu, root=root, clustering=clustering)
-            elif grammar_type == 'AVRG':
+            if grammar_type[0] == 'VRG':
+                extractor = VRGExtractor(g=g_copy, type=grammar_type[1], mu=mu, root=root, clustering=clustering)
+            elif grammar_type[0] == 'NCE':
+                extractor = NCEExtractor(g=g_copy, type=grammar_type[1], mu=mu, root=root, clustering=clustering)
+            elif grammar_type[0] == 'AVRG':
                 assert attr_name != ''
-                extractor = AVRGExtractor(g=g_copy, attr_name=attr_name, type='mu_random', clustering=clustering,
+                extractor = AVRGExtractor(g=g_copy, attr_name=attr_name, type=grammar_type[1], clustering=clustering,
                                           mu=mu, root=root)
             else:
                 raise NotImplementedError(f'Invalid grammar type {grammar_type!r}')
@@ -240,7 +241,7 @@ def parse_args():
     parser.add_argument('-c', '--clustering', help='Clustering method to use', default='consensus', choices=clustering_algs,
                         metavar='')
     parser.add_argument('-m', '--mu', help='Size of RHS (mu)', default=4, type=int)
-    parser.add_argument('-t', '--type', help='Grammar type', default='VRG', choices=grammar_types, metavar='')
+    parser.add_argument('-t', '--type', help='Grammar type', default='VRG-mu_random', choices=grammar_types, metavar='')
     parser.add_argument('-o', '--outdir', help='Name of the output directory', default='output')
     parser.add_argument('-n', help='Number of graphs to generate', default=5, type=int)
     parser.add_argument('-p', '--grammar-pickle', help='Use pickled grammar?', action='store_true')
@@ -256,8 +257,9 @@ if __name__ == '__main__':
         use_grammar_pickle, clustering, grammar_type, mu, n = args.graph, args.attr_name, args.cluster_pickle,\
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
-    # name = 'sample'; attr_name = 'color'; mu =3; grammar_type = 'AVRG'
-    name = 'karate'; attr_name = 'club'; mu = 10; grammar_type = 'AVRG'
+    # name = 'karate'; attr_name = 'club';
+    name = 'football'; attr_name = 'value';
+    mu = 10; grammar_type = ('AVRG', 'all_tnodes')
     use_grammar_pickle = False; use_cluster_pickle = True; n = 10
 
     g = get_graph(name)

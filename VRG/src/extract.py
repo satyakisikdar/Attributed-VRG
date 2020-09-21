@@ -21,7 +21,7 @@ class BaseExtractor(abc.ABC):
     """
     New base extractor class with Anytree class
     """
-    ALLOWED_TYPES = ('mu_random', )
+    ALLOWED_TYPES = ('mu_random', 'all_tnodes')
 
     def __init__(self, g: LightMultiGraph, type: str, root: TreeNode, mu: int, clustering: str):
         assert type in BaseExtractor.ALLOWED_TYPES, f'Invalid mode: {type}'
@@ -122,8 +122,9 @@ class BaseExtractor(abc.ABC):
             self.set_tnode_score(tnode=tnode)
             if np.isinf(tnode.score):  # dont bother any more TODO: check if this works when score is a tuple
                 break
-            assert (not np.isinf(tnode.score)) and \
-                   tnode.score != old_score, 'Score was not set properly'  # all the ancestor's scores have to change
+            assert not np.isinf(tnode.score)
+            if self.type != 'all_tnodes':
+                assert tnode.score != old_score, 'Score was not set properly'  # all the ancestor's scores have to change
             tnode = tnode.parent
         return
 
@@ -215,6 +216,9 @@ class VRGExtractor(BaseExtractor):
 
         if self.type == 'mu_random':
             score = mu_score  # |mu - nleaf|
+        elif self.type == 'all_tnodes':
+            diff = tnode.height - 1
+            score = diff if diff >= 0 else np.inf
         elif self.type == 'mu_level':
             score = mu_score, tnode.depth  # |mu - nleaf|, depth of the tnode
         elif 'dl' in self.type:  # compute cost only if description length is used for scores
