@@ -1,20 +1,22 @@
 """
 Use the Matlab implementation to find the consensus hierarchical clustering of a network
 """
+import logging
 import os
+import pickle
 import platform
+import sys;
 from collections import deque
 from pathlib import Path
-import sys; sys.path.extend(['./..', '../', '../../'])
+
+sys.path.extend(['./..', '../', '../../'])
 import numpy as np
 import networkx as nx
-import matplotlib.pyplot as plt
-import seaborn as sns
 import subprocess as sub
 
 import matplotlib
 
-from Tree import TreeNode
+from VRG.src.Tree import TreeNode
 matplotlib.use('Qt5agg')
 
 
@@ -30,7 +32,7 @@ def check_file_exists(path) -> bool:
 
 
 def run_matlab_code(g, gname):
-    matlab_code_path = './matlab_clustering/HierarchicalConsensus/'
+    matlab_code_path = './src/matlab_clustering/HierarchicalConsensus/'
     adj_mat_path = os.path.join(matlab_code_path, f'data/{gname}.mat')
 
     if not check_file_exists(adj_mat_path):
@@ -38,18 +40,17 @@ def run_matlab_code(g, gname):
 
     matlab_code_filename = os.path.join(matlab_code_path, f'{gname}_code.m')
 
-    if not check_file_exists(matlab_code_filename):
-        matlab_code = [
-            'addpath(genpath(\'./matlab_clustering\'));',
-            'cd matlab_clustering/HierarchicalConsensus;',
-            f'A = dlmread(\'./data/{gname}.mat\');',
-            'S = exponentialSamples(A, 500);',
-            '[Sc, Tree] = hierarchicalConsensus(S);',
-            f'dlmwrite("./data/{gname}_sc.vec", Sc, \' \');',
-            f'dlmwrite("./data/{gname}_tree.mat", Tree, \' \');'
-        ]
+    matlab_code = [
+        'addpath(genpath(\'./src/matlab_clustering\'));',
+        'cd src/matlab_clustering/HierarchicalConsensus;',
+        f'A = dlmread(\'./data/{gname}.mat\');',
+        'S = exponentialSamples(A, 500);',
+        '[Sc, Tree] = hierarchicalConsensus(S);',
+        f'dlmwrite("./data/{gname}_sc.vec", Sc, \' \');',
+        f'dlmwrite("./data/{gname}_tree.mat", Tree, \' \');'
+    ]
 
-        print('\n'.join(matlab_code), file=open(matlab_code_filename, 'w'))
+    print('\n'.join(matlab_code), file=open(matlab_code_filename, 'w'))
 
     tree_sc_path = os.path.join(matlab_code_path, f'data/{gname}_tree.mat')
     if not check_file_exists(tree_sc_path):
@@ -66,8 +67,9 @@ def run_matlab_code(g, gname):
     return
 
 
-def make_tree(g, gname):
-    clust_arr = np.loadtxt(f'./matlab_clustering/HierarchicalConsensus/data/{gname}_sc.vec', dtype=int)
+def get_consensus_root(g, gname):
+    run_matlab_code(g, gname)
+    clust_arr = np.loadtxt(f'./src/matlab_clustering/HierarchicalConsensus/data/{gname}_sc.vec', dtype=int)
 
     clustering = {}
     for u, c_u in zip(g.nodes(), clust_arr):
@@ -75,7 +77,7 @@ def make_tree(g, gname):
             clustering[c_u] = set()
         clustering[c_u].add(u)
 
-    tree_graph = nx.read_weighted_edgelist(f'./matlab_clustering/HierarchicalConsensus/data/{gname}_tree.mat',
+    tree_graph = nx.read_weighted_edgelist(f'./src/matlab_clustering/HierarchicalConsensus/data/{gname}_tree.mat',
                                            nodetype=int)
 
     root = TreeNode(name='n1')
@@ -93,13 +95,16 @@ def make_tree(g, gname):
                 tnode_v = TreeNode(name=f'n{v}', parent=tnode_u)
                 stack.append((v, tnode_v))
 
+    root_pickle_path = f'./dumps/trees/{gname}/consensus.pkl'
+    logging.error(f'Dumping root pickle at {root_pickle_path!r}')
+    pickle.dump(root, open(root_pickle_path, 'wb'))
+
     return root
 
 
 def main():
     g = nx.karate_club_graph(); gname = 'karate'
-    run_matlab_code(g=g, gname=gname)
-    # make_tree(g=g, gname=gname)
+    get_consensus_root(g=g, gname=gname)
     return
 
 
