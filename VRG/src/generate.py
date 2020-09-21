@@ -197,8 +197,12 @@ class AttributedRandomGenerator(RandomGenerator):
             self.current_non_terminal_nodes.remove(chosen_nt_node)  # remove the non-terminal from the set
             self.update_graph(chosen_rule=chosen_rule, chosen_nt_node=chosen_nt_node)
 
+        if self.fancy_rewirings == 0:
+            fancy_frac = 0
+        else:
+            fancy_frac = 100 * self.fancy_rewirings/self.total_rewirings
         logging.error(f'Generated graph: n={self._gen_graph.order():_d} m={self._gen_graph.size():_d} fancy rewirings'
-                      f'({self.fancy_rewirings:_d} / {self.total_rewirings:_d}) {round(100 * self.fancy_rewirings/self.total_rewirings, 3)}%')
+                      f'({self.fancy_rewirings:_d} / {self.total_rewirings:_d}) {round(fancy_frac, 3)}%')
 
         self._gen_graph.graph['total_rewirings'] = self.total_rewirings
         self._gen_graph.graph['fancy_rewirings'] = self.fancy_rewirings
