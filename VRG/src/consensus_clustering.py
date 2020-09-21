@@ -1,6 +1,8 @@
 """
 Use the Matlab implementation to find the consensus hierarchical clustering of a network
 """
+import os
+import platform
 from collections import deque
 from pathlib import Path
 import sys; sys.path.extend(['./..', '../', '../../'])
@@ -28,12 +30,13 @@ def check_file_exists(path) -> bool:
 
 
 def run_matlab_code(g, gname):
-    adj_mat_path = f'./matlab_clustering/HierarchicalConsensus/data/{gname}.mat'
+    matlab_code_path = './matlab_clustering/HierarchicalConsensus/'
+    adj_mat_path = os.path.join(matlab_code_path, f'data/{gname}.mat')
 
     if not check_file_exists(adj_mat_path):
         np.savetxt(adj_mat_path, nx.to_numpy_matrix(g), fmt='%d')
 
-    matlab_code_filename = f'./matlab_clustering/HierarchicalConsensus/{gname}_code.m'
+    matlab_code_filename = os.path.join(matlab_code_path, f'{gname}_code.m')
 
     if not check_file_exists(matlab_code_filename):
         matlab_code = [
@@ -48,9 +51,17 @@ def run_matlab_code(g, gname):
 
         print('\n'.join(matlab_code), file=open(matlab_code_filename, 'w'))
 
-        if check_file_exists(f'./matlab_clustering/HierarchicalConsensus/data/{gname}_tree.mat'):
-            process = sub.run(f'source ~/.zshrc; cat {matlab_code_filename} | matlab -nosplash -nodesktop',
-                              shell=True, executable='/bin/zsh')
+    tree_sc_path = os.path.join(matlab_code_path, f'data/{gname}_tree.mat')
+    if not check_file_exists(tree_sc_path):
+        if 'Linux' in platform.platform():
+            runner_code = f'source ~/.bashrc; cat {matlab_code_filename} | matlab -nosplash_desktop'
+            executable = '/bin/bash'
+        else:
+            runner_code = f'source ~/.zshrc; cat {matlab_code_filename} | matlab -nosplash -nodesktop'
+            executable = '/bin/zsh'
+        process = sub.run(runner_code, shell=True, executable=executable)
+        assert process.returncode == 0
+        assert check_file_exists(tree_sc_path)
 
     return
 
@@ -88,7 +99,7 @@ def make_tree(g, gname):
 def main():
     g = nx.karate_club_graph(); gname = 'karate'
     run_matlab_code(g=g, gname=gname)
-    make_tree(g=g, gname=gname)
+    # make_tree(g=g, gname=gname)
     return
 
 
