@@ -2,7 +2,11 @@ import argparse
 import logging
 import math
 import os
-import sys; sys.path.extend(['../'])
+import sys;
+
+from VRG.src.consensus_clustering import get_consensus_root
+
+sys.path.extend(['../'])
 from pathlib import Path
 
 from time import time
@@ -54,8 +58,10 @@ def get_graph(gname: str = 'sample') -> nx.Graph:
     else:
         if gname in ('waterloo', 'grenoble', 'uppsala'):
             g = nx.read_gpickle(f'../snap_data/cleaned/{gname}_lcc_attr.gpickle')
+        elif gname in ('polblogs', 'polbooks', 'football'):
+            g = nx.read_gml(f'./input/{gname}.gml')
         else:
-            path = f'./src/tmp/graphs/{gname}.g'
+            path = f'./input/{gname}.g'
             g = nx.read_edgelist(path, nodetype=int, create_using=nx.Graph())
 
         g.remove_edges_from(nx.selfloop_edges(g))
@@ -101,13 +107,15 @@ def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool, 
         os.makedirs(f'./{outdir}')
 
     if check_file_exists(list_of_list_pickle) and use_pickle:
-        print(f'Using existing pickle for {clustering!r} clustering\n')
+        logging.error(f'Using existing pickle for {clustering!r} clustering\n')
         list_of_list_clusters = load_pickle(list_of_list_pickle)
 
     else:
         tqdm.write(f'Running {clustering!r} clustering...')
         if clustering == 'random':
             list_of_list_clusters = partitions.get_random_partition(g)
+        elif clustering == 'consensus':
+            list_of_list_clusters = get_consensus_root(g=g, gname=g.name)
         elif clustering in ('leiden', 'louvain', 'infomap', 'labelprop'):
             assert max_size is not None
             list_of_list_clusters = partitions.louvain_leiden_infomap_label_prop(g, method=clustering, max_size=max_size)
@@ -165,8 +173,10 @@ def get_grammars(name: str, clustering: str, grammar_type: str, mu: int, input_g
             g_copy.name = input_graph.name
             list_of_list_clusters = get_clustering(g=g_copy, outdir=f'{outdir}/trees/{name}', clustering=clustering,
                                                    use_pickle=use_cluster_pickle, max_size=mu)
-            root = create_tree(list_of_list_clusters)
-
+            if isinstance(list_of_list_clusters, list):
+                root = create_tree(list_of_list_clusters)
+            else:
+                root = list_of_list_clusters
             g_copy = LightMultiGraph()
             for n, d in input_graph.nodes(data=True):
                 g_copy.add_node(n, **d)
@@ -211,7 +221,7 @@ def generate_graphs(grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, ou
 
 
 def parse_args():
-    clustering_algs = ['leiden', 'louvain', 'spectral', 'cond', 'random']
+    clustering_algs = ['consensus', 'leiden', 'louvain', 'spectral', 'cond', 'random']
     # grammar_types = ('mu_random', )  # 'mu_level', 'mu_dl', 'mu_level_dl', 'local_dl', 'global_dl')
     grammar_types = ('VRG', 'NCE')
     parser = argparse.ArgumentParser(
@@ -219,7 +229,7 @@ def parse_args():
 
     # using choices we can control the inputs. metavar='' prevents printing the choices in the help preventing clutter
     parser.add_argument('-g', '--graph', help='Name of the graph or path to gpickle file', default='karate', metavar='')
-    parser.add_argument('-c', '--clustering', help='Clustering method to use', default='leiden', choices=clustering_algs,
+    parser.add_argument('-c', '--clustering', help='Clustering method to use', default='consensus', choices=clustering_algs,
                         metavar='')
     parser.add_argument('-m', '--mu', help='Size of RHS (mu)', default=4, type=int)
     parser.add_argument('-t', '--type', help='Grammar type', default='VRG', choices=grammar_types, metavar='')
@@ -239,10 +249,11 @@ if __name__ == '__main__':
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
     # name = 'sample'; attr_name = 'color'; mu =3; grammar_type = 'AVRG'
-    name = 'karate'; attr_name = 'club'; mu = 6; grammar_type = 'AVRG'
+    name = 'polblogs'; attr_name = 'value'; mu = 6; grammar_type = 'AVRG'
     use_grammar_pickle = True; use_cluster_pickle = True; n = 10
 
     g = get_graph(name)
+    g.name = name
     if attr_name != '':
         mix_dict = nx.attribute_mixing_dict(g, attribute=attr_name, normalized=True)
         print('Mixing dict:', mix_dict)
