@@ -115,6 +115,14 @@ def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool, 
         if clustering == 'random':
             list_of_list_clusters = partitions.get_random_partition(g)
         elif clustering == 'consensus':
+            # delete the matlab tree and sc files
+            matlab_files_path = './src/matlab_clustering/HierarchicalConsensus/data'
+            tree_path = os.path.join(matlab_files_path, f'{g.name}_tree.mat')
+            sc_path = os.path.join(matlab_files_path, f'{g.name}_sc.vec')
+            if check_file_exists(tree_path):
+                os.remove(tree_path)
+            if check_file_exists(sc_path):
+                os.remove(sc_path)
             list_of_list_clusters = get_consensus_root(g=g, gname=g.name)
         elif clustering in ('leiden', 'louvain', 'infomap', 'labelprop'):
             assert max_size is not None
@@ -249,7 +257,7 @@ if __name__ == '__main__':
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
     # name = 'sample'; attr_name = 'color'; mu =3; grammar_type = 'AVRG'
-    name = 'polblogs'; attr_name = 'value'; mu = 60; grammar_type = 'AVRG'
+    name = 'karate'; attr_name = 'club'; mu = 10; grammar_type = 'AVRG'
     use_grammar_pickle = False; use_cluster_pickle = True; n = 10
 
     g = get_graph(name)

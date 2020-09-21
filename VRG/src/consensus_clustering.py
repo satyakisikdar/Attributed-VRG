@@ -1,9 +1,7 @@
 """
 Use the Matlab implementation to find the consensus hierarchical clustering of a network
 """
-import logging
 import os
-import pickle
 import platform
 import sys;
 from collections import deque
@@ -44,7 +42,7 @@ def run_matlab_code(g, gname):
         'addpath(genpath(\'./src/matlab_clustering\'));',
         'cd src/matlab_clustering/HierarchicalConsensus;',
         f'A = dlmread(\'./data/{gname}.mat\');',
-        'S = exponentialSamples(A, 2000);',
+        'S = eventSamples(A, 250);',
         '[Sc, Tree] = hierarchicalConsensus(S);',
         f'dlmwrite("./data/{gname}_sc.vec", Sc, \' \');',
         f'dlmwrite("./data/{gname}_tree.mat", Tree, \' \');'
@@ -94,10 +92,6 @@ def get_consensus_root(g, gname):
                 visited.add(v)
                 tnode_v = TreeNode(name=f'n{v}', parent=tnode_u)
                 stack.append((v, tnode_v))
-
-    root_pickle_path = f'./dumps/trees/{gname}/consensus.pkl'
-    logging.error(f'Dumping root pickle at {root_pickle_path!r}')
-    pickle.dump(root, open(root_pickle_path, 'wb'))
 
     return root
 
