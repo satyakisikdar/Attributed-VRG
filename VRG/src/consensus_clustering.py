@@ -9,7 +9,7 @@ import sys;
 from collections import deque
 from pathlib import Path
 
-sys.path.extend(['./..', '../', '../../'])
+sys.path.extend(['./..', '../', '../../', '../../../'])
 import numpy as np
 import networkx as nx
 import subprocess as sub
