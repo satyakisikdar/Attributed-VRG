@@ -1,6 +1,7 @@
 from collections import deque
 from typing import Tuple, List, Set, Union, Any
 
+import networkx as nx
 import numpy as np
 from anytree import Node, RenderTree
 
@@ -175,6 +176,37 @@ def create_tree_old(lst: List[Any]) -> TreeNode:
     update_info(node=root)
 
     return root
+
+
+def find_lca(tnode1: TreeNode, tnode2: TreeNode) -> TreeNode:
+    """
+    Find the LCA of the two tree nodes
+    """
+    path1, path2 = map(reversed, (tnode1.path, tnode2.path))  # reverse the paths
+    path1, path2 = map(list, (path1, path2))
+    higher_depth = tnode1.depth if tnode1.depth < tnode2.depth else tnode2.depth
+    path1 = path1[-higher_depth: ]  # only look at the
+    path2 = path2[-higher_depth: ]
+    for anc1, anc2 in zip(path1, path2):
+        if anc1.name == anc2.name:
+            lca = anc1
+            break
+    return lca
+
+
+def dasgupta_cost(g: nx.Graph, root: TreeNode, weighted: bool = False) -> float:
+    tnodes = {leaf.name: leaf for leaf in root.leaves}
+    cost = 0
+
+    for u, v in g.edges():
+        if not weighted:
+            w = 1
+        else:
+            w = g[u][v]['weight']
+        lca_uv = find_lca(tnodes[u], tnodes[v])
+        cost += w * len(lca_uv.leaves)
+
+    return cost
 
 
 if __name__ == '__main__':
