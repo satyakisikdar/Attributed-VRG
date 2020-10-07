@@ -14,11 +14,10 @@ class BaseRule:
     """
     __slots__ = 'lhs_nt', 'graph', 'level', 'cost', 'frequency', 'id', 'rhs_non_terminals', 'nodes_covered'
 
-    def __init__(self, lhs_nt: NonTerminal, graph: LightMultiGraph, level: int = 0, cost: int = 0, frequency: int = 1):
+    def __init__(self, lhs_nt: NonTerminal, graph: LightMultiGraph, level: int = 0, frequency: int = 1):
         self.lhs_nt = lhs_nt  # the left hand side: the number of boundary edges
         self.graph = graph  # the right hand side subgraph
         self.level = level  # level of discovery in the tree (the root is at 0)
-        self.cost = cost  # the cost of encoding the rule using MDL (in bits)
         self.frequency = frequency  # frequency of occurence
         self.id = None  # id of the rule
 
@@ -32,6 +31,7 @@ class BaseRule:
                 # self.nodes_covered[0].update(nt.nodes_covered)
             else:
                 self.nodes_covered.add(node)
+        self.calculate_cost()
         return
 
     def __str__(self) -> str:
@@ -67,7 +67,6 @@ class BaseRule:
         g2 = nx.convert_node_labels_to_integers(other.graph)
         isomorphic = isomorphic and nx.is_isomorphic(g1, g2, node_match=iso.numerical_node_match('b_deg', default=0),
                                                      edge_match=edge_matcher)  # use the node and edge matcher
-
         return isomorphic
 
     def __hash__(self):
@@ -77,6 +76,16 @@ class BaseRule:
     def __deepcopy__(self, memodict={}):
         return BaseRule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, cost=self.cost,
                         frequency=self.frequency)
+
+    def calculate_cost(self):
+        b_deg = nx.get_node_attributes(self.graph, 'b_deg')
+        assert len(b_deg) > 0, 'invalid b_deg'
+        max_boundary_degree = max(b_deg.values())
+
+        self.cost = MDL.gamma_code(self.lhs_nt.size + 1) + MDL.graph_dl(self.graph) + \
+                    MDL.gamma_code(self.frequency + 1) + \
+                    self.graph.order() * MDL.gamma_code(max_boundary_degree + 1)
+        return
 
     def contract_rhs(self):
         pass
@@ -159,21 +168,6 @@ class VRGRule(BaseRule):
         return VRGRule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, cost=self.cost,
                        frequency=self.frequency)
 
-    def calculate_cost(self):
-        """
-        Calculates the MDL for the rule. This includes the encoding of boundary degrees of the nodes.
-        l_u = 2 (because we have one type of nodes and one type of edge)
-        :return:
-        """
-        b_deg = nx.get_node_attributes(self.graph, 'b_deg')
-        assert len(b_deg) > 0, 'invalid b_deg'
-        max_boundary_degree = max(b_deg.values())
-
-        self.cost = MDL.gamma_code(self.lhs_nt.size + 1) + MDL.graph_dl(self.graph) + \
-                    MDL.gamma_code(self.frequency + 1) + \
-                    self.graph.order() * MDL.gamma_code(max_boundary_degree + 1)
-        return
-
 
 class AVRGRule(BaseRule):
     """
@@ -183,10 +177,6 @@ class AVRGRule(BaseRule):
         super().__init__(lhs_nt, graph)
         self.attr_name = attr_name
         return
-
-    def calculate_cost(self) -> float:
-        # compute cost of rule using MDL
-        return -1
 
     def __eq__(self, other) -> bool:
         """
@@ -218,10 +208,6 @@ class NCERule(BaseRule):
     def __deepcopy__(self, memodict={}):
         return NCERule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, cost=self.cost,
                         frequency=self.frequency)
-
-    def calculate_cost(self):
-        self.cost = -1
-        return
 
     def update_boundary_nodes_edges(self, boundary_edges: List):
         """
