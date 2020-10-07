@@ -1,13 +1,11 @@
 """
 Container for different graph stats
 """
-import os
 import platform
 import subprocess as sub
 import sys
 from collections import Counter, deque
-from pathlib import Path
-from typing import Dict, Tuple, List, Union, Any
+from typing import Dict, Tuple, List, Any
 
 sys.path.extend(['./../', './../../'])
 print('sys path: ', sys.path)
@@ -20,10 +18,39 @@ import seaborn as sns
 import leidenalg as la
 import igraph as ig
 
-from src.utils import check_file_exists, ColorPrint as CP, dump_pickle
+# from src.utils import check_file_exists, ColorPrint as CP, dump_pickle
 
 sns.set()
 sns.set_style("darkgrid")
+
+class ColorPrint:
+    @staticmethod
+    def print_red(message, end='\n'):
+        sys.stderr.write('\x1b[1;31m' + message.strip() + '\x1b[0m' + end)
+
+    @staticmethod
+    def print_green(message, end='\n'):
+        sys.stdout.write('\x1b[1;32m' + message.strip() + '\x1b[0m' + end)
+
+    @staticmethod
+    def print_orange(message, end='\n'):
+        sys.stderr.write('\x1b[1;33m' + message.strip() + '\x1b[0m' + end)
+
+    @staticmethod
+    def print_blue(message, end='\n'):
+        # pass
+        sys.stdout.write('\x1b[1;34m' + message.strip() + '\x1b[0m' + end)
+
+    @staticmethod
+    def print_bold(message, end='\n'):
+        sys.stdout.write('\x1b[1;37m' + message.strip() + '\x1b[0m' + end)
+
+    @staticmethod
+    def print_none(message, end='\n'):
+        pass
+        # sys.stdout.write(message + end)
+
+CP = ColorPrint
 
 
 class GraphStats:
