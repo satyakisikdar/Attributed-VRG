@@ -4,7 +4,7 @@ Contains the different partition methods
 2. Spectral K-means
 3. Leiden and Louvain methods
 """
-
+import logging
 import random
 from typing import Union
 
@@ -15,7 +15,7 @@ import sklearn.preprocessing
 from sklearn.cluster import KMeans
 
 from VRG.src.LightMultiGraph import LightMultiGraph
-from VRG.src.utils import nx_to_igraph, igraph_to_nx
+from VRG.src.utils import nx_to_igraph
 
 
 def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], max_size: int, method: str = 'leiden'):
@@ -47,19 +47,22 @@ def _get_list_of_lists(ig_g, max_size, method='leiden', weights=None):
 
     if len(clusters) == 1:
         sg = clusters.subgraphs()[0]
-        if clusters.sizes()[0] <= max_size:
-            assert sg.is_connected(mode='WEAK'), 'subgraph is disconnected'
-            comms = [[int(n['name'])] for n in sg.vs()]
-            return comms
-        else:
-            # try clustering 'sg' again using conductance
-            nx_sg = igraph_to_nx(ig_g=sg)
-            comms = approx_min_conductance_partitioning(g=nx_sg, max_k=max_size)
-            return comms
+        comms = [[int(n['name'])] for n in sg.vs()]
+        return comms
+        # if clusters.sizes()[0] <= max_size:
+        #     assert sg.is_connected(mode='WEAK'), 'subgraph is disconnected'
+        #     comms = [[int(n['name'])] for n in sg.vs()]
+        #     return comms
+        # else:
+        #     # try clustering 'sg' again using conductance
+        #     nx_sg = igraph_to_nx(ig_g=sg)
+        #     comms = approx_min_conductance_partitioning(g=nx_sg, max_k=max_size)
+        #     return comms
 
     for sg in clusters.subgraphs():
         sg: ig.Graph
-        assert sg.is_connected(mode='WEAK'), 'subgraph is disconnected'
+        if sg.is_connected(mode='WEAK'):
+            logging.error('subgraph is disconnected')
         tree.append(_get_list_of_lists(sg, method=method, weights=weights, max_size=max_size))
 
     return tree
