@@ -31,7 +31,7 @@ class BaseVRG(abc.ABC):
         self.unique_rule_dict: Dict[int, List[NCERule]] = {}  # dictionary of rules, keyed in by their LHS
         self.unique_rule_rhs: List = []  # list of unique rule RHSs
 
-        self.cost: int = 0  # the MDL of the rules
+        self.cost: int = -1  # the MDL of the rules
         self.num_rules: int = 0  # number of active rules
 
     def copy(self):
@@ -60,6 +60,11 @@ class BaseVRG(abc.ABC):
 
     def __getitem__(self, item):
         return self.rule_list[item]
+
+    def get_cost(self) -> float:
+        if self.cost == -1:
+            self.calculate_cost()
+        return self.cost
 
     def reset(self):
         # reset the grammar
@@ -174,7 +179,7 @@ class NCE:
         self.unique_rule_dict: Dict[int, List[NCERule]] = {}  # dictionary of rules, keyed in by their LHS
         self.unique_rule_rhs: List = []  # list of unique rule RHSs
 
-        self.cost: int = 0  # the MDL of the rules
+        self.cost: int = -1  # the MDL of the rules
         self.num_rules: int = 0  # number of active rules
 
     def __len__(self):
@@ -202,6 +207,11 @@ class NCE:
         self.rule_dict = {}
         self.cost = 0
         self.num_rules = 0
+
+    def get_cost(self) -> float:
+        if self.cost == -1:
+            self.calculate_cost()
+        return self.cost
 
     def add_rule(self, rule: VRGRule) -> int:
         # adds to the grammar iff it's a new rule
