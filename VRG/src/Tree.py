@@ -4,6 +4,9 @@ from typing import Tuple, List, Set, Union, Any
 import networkx as nx
 import numpy as np
 from anytree import Node, RenderTree
+from joblib import Parallel, delayed
+
+from VRG.src.utils import timer
 
 
 def get_leaves(tnode) -> Set[int]:
@@ -194,19 +197,31 @@ def find_lca(tnode1: TreeNode, tnode2: TreeNode) -> TreeNode:
     return lca
 
 
-def dasgupta_cost(g: nx.Graph, root: TreeNode, weighted: bool = False) -> float:
+@timer
+def dasgupta_cost(g: nx.Graph, root: TreeNode, use_parallel: bool = True) -> float:
+    """
+    Assumes that the graph is unweighted for now
+    :param g:
+    :param root:
+    :param weighted:
+    :return:
+    """
     tnodes = {leaf.name: leaf for leaf in root.leaves}
-    cost = 0
 
-    for u, v in g.edges():
-        if not weighted:
-            w = 1
-        else:
-            w = g[u][v]['weight']
-        lca_uv = find_lca(tnodes[u], tnodes[v])
-        cost += w * len(lca_uv.leaves)
+    if use_parallel:
+        with Parallel(n_jobs=10, backend='multiprocessing') as parallel:
+            cost = parallel(delayed(dasgupta_parallel)(u, v, tnodes) for u, v in g.edges())
+            total_cost = sum(cost)
+    else:
+        total_cost = sum(dasgupta_parallel(u, v, tnodes) for u, v in g.edges())
+    print(f'Dasgupta cost: {total_cost:_d} parallel? {use_parallel}')
+    return total_cost
 
-    return cost
+
+def dasgupta_parallel(u, v, tnodes) -> float:
+    w = 1  # unweighted
+    lca_uv = find_lca(tnodes[u], tnodes[v])
+    return w * len(lca_uv.leaves)
 
 
 if __name__ == '__main__':

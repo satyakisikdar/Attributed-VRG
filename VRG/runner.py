@@ -19,7 +19,7 @@ from tqdm import tqdm
 from VRG.src.consensus_clustering import get_consensus_root
 import VRG.src.partitions as partitions
 from VRG.src.LightMultiGraph import LightMultiGraph
-from VRG.src.Tree import create_tree
+from VRG.src.Tree import create_tree, dasgupta_cost
 from VRG.src.VRG import VRG, NCE, AttributedVRG
 from VRG.src.extract import NCEExtractor, VRGExtractor, AVRGExtractor
 from VRG.src.generate import RandomGenerator, NCEGenerator, AttributedRandomGenerator, GreedyAttributeRandomGenerator
@@ -186,6 +186,11 @@ def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: 
             else:
                 root = list_of_list_clusters
 
+            dc_serial = dasgupta_cost(g=g, root=root, use_parallel=False)
+            dc_par = dasgupta_cost(g=g, root=root, use_parallel=True)
+            print(f'Serial {dc_serial} parall {dc_par}')
+            return
+
             g_copy = LightMultiGraph()
             for n, d in input_graph.nodes(data=True):
                 g_copy.add_node(n, **d)
@@ -203,6 +208,7 @@ def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: 
                 raise NotImplementedError(f'Invalid grammar type {grammar_type!r}')
 
             grammar = extractor.extract()
+            logging.error(str(grammar))
             dump_pickle(grammar, grammar_filename)
         grammars.append(grammar)
     return grammars
@@ -263,10 +269,10 @@ if __name__ == '__main__':
         use_grammar_pickle, clustering, grammar_type, mu, n = args.graph, args.attr_name, args.cluster_pickle,\
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
-    # name = 'polblogs'; attr_name = 'value'
-    name = 'karate'; attr_name = 'club'
+    name = 'polblogs'; attr_name = 'value'
+    # name = 'karate'; attr_name = 'club'
     mu = 5; grammar_type = ('AVRG', 'all_tnodes')
-    use_grammar_pickle = True; use_cluster_pickle = True; n = 10
+    use_grammar_pickle = False; use_cluster_pickle = True; n = 10
     inp_deg_ast, inp_attr_ast = None, None
 
     g = get_graph(name)
@@ -281,9 +287,9 @@ if __name__ == '__main__':
                        use_grammar_pickle=use_grammar_pickle, use_cluster_pickle=use_cluster_pickle, attr_name=attr_name)[0]
 
     print(vrg)
-    inp_deg_ast = nx.degree_assortativity_coefficient(g)
-    inp_attr_ast = nx.attribute_assortativity_coefficient(g, attr_name)
-    grammar_type = ('AVRG', 'greedy')
-    graphs = generate_graphs(grammar=vrg, num_graphs=1, mixing_dict=mix_dict, attr_name=attr_name, grammar_type=grammar_type,
-                             inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast)
-    print(graphs)
+    # inp_deg_ast = nx.degree_assortativity_coefficient(g)
+    # inp_attr_ast = nx.attribute_assortativity_coefficient(g, attr_name)
+    # grammar_type = ('AVRG', 'greedy')
+    # graphs = generate_graphs(grammar=vrg, num_graphs=1, mixing_dict=mix_dict, attr_name=attr_name, grammar_type=grammar_type,
+    #                          inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast)
+    # print(graphs)
