@@ -18,6 +18,8 @@ from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.utils import nx_to_igraph
 
 
+# LightMultiGraph = nx.Graph
+
 def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], max_size: int, method: str = 'leiden'):
     is_weighted = False
     if isinstance(g, nx.Graph) or isinstance(g, nx.DiGraph):  # turn it into an igraph Graph
@@ -61,7 +63,7 @@ def _get_list_of_lists(ig_g, max_size, method='leiden', weights=None):
 
     for sg in clusters.subgraphs():
         sg: ig.Graph
-        if sg.is_connected(mode='WEAK'):
+        if not sg.is_connected(mode='WEAK'):
             logging.error('subgraph is disconnected')
         tree.append(_get_list_of_lists(sg, method=method, weights=weights, max_size=max_size))
 
@@ -89,24 +91,22 @@ def random_partition(nodes):
     return tree
 
 
-def approx_min_conductance_partitioning(g: nx.Graph, max_k=1):
+def approx_min_conductance_partitioning(g: nx.Graph):
     """
     Approximate minimum conductance partinioning. I'm using the median method as referenced here:
     http://www.ieor.berkeley.edu/~goldberg/pubs/krishnan-recsys-final2.pdf
     :param g: graph to recursively partition
-    :param max_k: upper bound of number of nodes allowed in the leaves
     :return: a dendrogram
     """
     lvl = []
     node_list = list(g.nodes())
-    if len(node_list) <= max_k:
-        assert len(node_list) > 0
-        return [[n] for n in node_list]
+    if len(node_list) == 1:
+        return node_list
 
     if not nx.is_connected(g):
         for nodes_cc in nx.connected_components(g):
             p = g.subgraph(nodes_cc).copy()
-            lvl.append(approx_min_conductance_partitioning(p, max_k))
+            lvl.append(approx_min_conductance_partitioning(p))
         assert len(lvl) > 0
         return lvl
 
@@ -161,8 +161,8 @@ def approx_min_conductance_partitioning(g: nx.Graph, max_k=1):
 
     assert nx.is_connected(sg1) and nx.is_connected(sg2), "subgraphs are not connected in cond"
 
-    lvl.append(approx_min_conductance_partitioning(sg1, max_k))
-    lvl.append(approx_min_conductance_partitioning(sg2, max_k))
+    lvl.append(approx_min_conductance_partitioning(sg1))
+    lvl.append(approx_min_conductance_partitioning(sg2))
 
     assert (len(lvl) > 0)
     return lvl
@@ -224,3 +224,9 @@ def spectral_kmeans(g: LightMultiGraph, K: int):
             tree.append(spectral_kmeans(sg, K - 1))
 
     return tree
+
+
+if __name__ == '__main__':
+    g = nx.karate_club_graph()
+    l = approx_min_conductance_partitioning(g)
+    print(l)
