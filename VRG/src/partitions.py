@@ -5,6 +5,7 @@ Contains the different partition methods
 3. Leiden and Louvain methods
 """
 import logging
+import math
 import random
 from typing import Union
 
@@ -53,7 +54,7 @@ def _get_list_of_lists(ig_g, max_size, method='leiden', weights=None):
         return comms
         # if clusters.sizes()[0] <= max_size:
         #     assert sg.is_connected(mode='WEAK'), 'subgraph is disconnected'
-        #     comms = [[int(n['name'])] for n in sg.vs()]
+        #     comms = [[int(n['name'])] for n in sg.vs()]90
         #     return comms
         # else:
         #     # try clustering 'sg' again using conductance
@@ -178,7 +179,11 @@ def spectral_kmeans(g: LightMultiGraph, K: int):
     tree = []
 
     if g.order() <= K:   # not more than k nodes, return the list of nodes
-        return [[n] for n in g.nodes()]
+        if g.order() == 1:
+            clusters = list(g.nodes())
+        else:
+            clusters = [[n] for n in g.nodes()]
+        return clusters
 
     if K == 2:  # if K is two, use approx min partitioning
         return approx_min_conductance_partitioning(g)
@@ -228,5 +233,7 @@ def spectral_kmeans(g: LightMultiGraph, K: int):
 
 if __name__ == '__main__':
     g = nx.karate_club_graph()
-    l = approx_min_conductance_partitioning(g)
+    # l = approx_min_conductance_partitioning(g)
+    K = int(math.sqrt(g.order() // 2))
+    l = spectral_kmeans(g, K)
     print(l)
