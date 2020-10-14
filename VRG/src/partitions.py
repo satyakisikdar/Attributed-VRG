@@ -50,17 +50,11 @@ def _get_list_of_lists(ig_g, max_size, method='leiden', weights=None):
 
     if len(clusters) == 1:
         sg = clusters.subgraphs()[0]
-        comms = [[int(n['name'])] for n in sg.vs()]
+        if sg.vcount() == 1:
+            comms = [int(n['name']) for n in sg.vs()]
+        else:
+            comms = [[int(n['name'])] for n in sg.vs()]
         return comms
-        # if clusters.sizes()[0] <= max_size:
-        #     assert sg.is_connected(mode='WEAK'), 'subgraph is disconnected'
-        #     comms = [[int(n['name'])] for n in sg.vs()]90
-        #     return comms
-        # else:
-        #     # try clustering 'sg' again using conductance
-        #     nx_sg = igraph_to_nx(ig_g=sg)
-        #     comms = approx_min_conductance_partitioning(g=nx_sg, max_k=max_size)
-        #     return comms
 
     for sg in clusters.subgraphs():
         sg: ig.Graph

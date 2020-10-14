@@ -63,6 +63,7 @@ class BaseVRG(abc.ABC):
 
     def get_cost(self) -> float:
         if self.cost == -1:
+            self.cost = 0
             self.calculate_cost()
         return self.cost
 
@@ -74,6 +75,7 @@ class BaseVRG(abc.ABC):
         self.num_rules = 0
 
     def calculate_cost(self):
+        self.cost = 0
         for rule in self.rule_list:
             rule.calculate_cost()
             self.cost += rule.cost
@@ -114,7 +116,7 @@ class VRG(BaseVRG):
         self.rule_dict[rule.lhs_nt.size].append(rule)
 
         # update the unique rules
-        rule_copy = VRGRule(lhs_nt=rule.lhs_nt, graph=rule.graph, level=rule.level, cost=rule.cost, frequency=1)
+        rule_copy = VRGRule(lhs_nt=rule.lhs_nt, graph=rule.graph, level=rule.level, frequency=1)
 
         if rule_copy.lhs_nt.size not in self.unique_rule_dict:
             self.unique_rule_dict[rule_copy.lhs_nt.size] = []
@@ -226,7 +228,7 @@ class NCE:
         self.rule_dict[rule.lhs_nt.size].append(rule)
 
         # update the unique rules
-        rule_copy = NCERule(lhs_nt=rule.lhs_nt, graph=rule.graph, level=rule.level, cost=rule.cost, frequency=1)
+        rule_copy = NCERule(lhs_nt=rule.lhs_nt, graph=rule.graph, level=rule.level, frequency=1)
 
         if rule_copy.lhs_nt.size not in self.unique_rule_dict:
             self.unique_rule_dict[rule_copy.lhs_nt.size] = []
@@ -256,6 +258,7 @@ class NCE:
         return rule.id
 
     def calculate_cost(self):
+        self.cost = 0
         for rule in self.rule_list:
             rule.calculate_cost()
             self.cost += rule.cost
