@@ -1,7 +1,7 @@
 import math
 
 import networkx as nx
-
+import sys; sys.path.append('../')
 from VRG.src.LightMultiGraph import LightMultiGraph
 
 
@@ -20,7 +20,7 @@ def nbits(x):
     return math.log2(x)
 
 
-def graph_dl(g):
+def graph_dl(g: LightMultiGraph, attributed: bool = False):
     """
      Get DL for graphs using Gamma coding
      :param g:  a multigraph
@@ -29,7 +29,7 @@ def graph_dl(g):
     n = g.order()
     m = len(g.edges())  # here we dont use size because it will throw the algorithm into a whack
 
-    l_u = find_lu(g)
+    l_u = find_lu(g, attributed)
 
     # encoding the nodes
     dl_v = nbits(n) + n * nbits(l_u)
@@ -47,24 +47,27 @@ def graph_dl(g):
     return dl_v + dl_e
 
 
-def find_lu(g: LightMultiGraph) -> int:
+def find_lu(g, attributed: bool = False) -> int:
     l_u = 1  # for edges
     node_types = set()
 
     for n, d in g.nodes(data=True):
-        node_types.add('nt') if 'nt' in d else node_types.add('t')
-        for k, v in d.items():
-            if k != 'nt': node_types.add(v)
+        node_types.add(f'nt-{d["nt"]}') if 'nt' in d else node_types.add('t')
+        if attributed:
+            if 'attr_dict' in d: d = d['attr_dict']
+            for k, v in d.items():
+                if k != 'nt' and k != 'orig_label': node_types.add(v)
 
     l_u += len(node_types)
     return l_u
 
 
 if __name__ == '__main__':
-    g = nx.karate_club_graph()
-    lmg = LightMultiGraph()
-    lmg.add_edges_from(g.edges())
-    print(graph_dl(lmg))
+    g = nx.read_gml('../input/football.gml')
+    print(graph_dl(g), graph_dl(g, attributed=True))
+    # lmg = LightMultiGraph()
+    # lmg.add_edges_from(g.edges())
+    # print(graph_dl(lmg))
     # h = nx.path_graph(10)
     # g.add_nodes_from(range(5), color='red')
     # g.add_nodes_from(range(5, 10), color='blue')
