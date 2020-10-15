@@ -21,7 +21,7 @@ from VRG.src.utils import nx_to_igraph
 
 # LightMultiGraph = nx.Graph
 
-def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], max_size: int, method: str = 'leiden'):
+def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], method: str = 'leiden'):
     is_weighted = False
     if isinstance(g, nx.Graph) or isinstance(g, nx.DiGraph):  # turn it into an igraph Graph
         if len(nx.get_edge_attributes(g, name='wt')) == 0:
@@ -29,10 +29,10 @@ def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], 
         g = nx_to_igraph(g)
 
     weights = 'weight' if is_weighted else None
-    return _get_list_of_lists(ig_g=g, method=method, weights=weights, max_size=max_size)
+    return _get_list_of_lists(ig_g=g, method=method, weights=weights)
 
 
-def _get_list_of_lists(ig_g, max_size, method='leiden', weights=None):
+def _get_list_of_lists(ig_g, method='leiden', weights=None):
     tree = []
 
     if method == 'leiden':
@@ -60,7 +60,7 @@ def _get_list_of_lists(ig_g, max_size, method='leiden', weights=None):
         sg: ig.Graph
         if not sg.is_connected(mode='WEAK'):
             logging.error('subgraph is disconnected')
-        tree.append(_get_list_of_lists(sg, method=method, weights=weights, max_size=max_size))
+        tree.append(_get_list_of_lists(sg, method=method, weights=weights))
 
     return tree
 
