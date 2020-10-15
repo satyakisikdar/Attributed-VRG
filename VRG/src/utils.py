@@ -201,8 +201,7 @@ def timer(func):
         value = func(*args, **kwargs)
         toc = time.perf_counter()
         elapsed_time = toc - tic
-        ColorPrint.print_bold(f'End: {datetime.now().ctime()}')
-        ColorPrint.print_bold(f"Elapsed time: {elapsed_time:0.4f} seconds")
+        ColorPrint.print_bold(f'({func.__name__}) End: {datetime.now().ctime()}, Elapsed time: {elapsed_time:0.4f}s')
         return value
 
     return wrapper_timer
@@ -354,6 +353,15 @@ def nx_to_igraph(nx_g: Union[nx.Graph, nx.DiGraph]) -> ig.Graph:
     return ig_g
 
 
+def nx_to_lmg(nx_g: nx.Graph) -> LightMultiGraph:
+    lmg = LightMultiGraph()
+    lmg.name = nx_g.name
+    for n, d in nx_g.nodes(data=True):
+        lmg.add_node(n, **d)
+    lmg.add_edges_from(nx_g.edges(data=True))
+    return lmg
+
+
 def igraph_to_nx(ig_g: ig.Graph) -> nx.Graph:
     """
     Convert an igraph graph into a networkx graph
@@ -376,3 +384,17 @@ def get_assortativity(g: nx.Graph, attr_name: str):
         return nx.degree_assortativity_coefficient(g)
     else:
         return nx.attribute_assortativity_coefficient(g, attribute=attr_name)
+
+
+def get_mixing_dict(g: nx.Graph, attr_name: str) -> Dict:
+    """
+    Row normalized mixing dict akin to a transition matrix
+    :return:
+    """
+    attr_dict = nx.attribute_mixing_dict(g, attribute=attr_name, normalized=False)
+    row_norm_attr_dict = {}
+    for key1, dict1 in attr_dict.items():
+        row_norm_attr_dict[key1] = {}
+        for key2, val in dict1.items():
+            row_norm_attr_dict[key1][key2] = val / sum(dict1.values())
+    return row_norm_attr_dict
