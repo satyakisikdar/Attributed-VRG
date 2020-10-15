@@ -1,8 +1,14 @@
-import os
+import sys
+from glob import glob
 
-from VRG.runner import get_grammars, get_graph, get_clustering
+import networkx as nx
+
+from VRG.runner import get_grammars, get_graph, get_clustering, generate_graphs
+from VRG.src.VRG import AttributedVRG, VRG
 from VRG.src.parallel import parallel_async
-from VRG.src.utils import load_pickle
+from VRG.src.utils import load_pickle, get_mixing_dict
+
+sys.path.extend(['/home/ssikdar/tmp_dir'])
 
 
 def batch_cluster_runner():
@@ -57,44 +63,47 @@ def batch_grammar_runner():
 
 def batch_graph_runner():
     names = ['karate', 'football', 'polbooks', 'eucore', 'flights', 'chess', 'polblogs']
-    clusterings = ['cond', 'spectral', 'leiden', 'louvain', 'consensus', 'infomap', 'labelprop']
-    grammar_types = [('VRG', 'random'), ('VRG', 'greedy'), ('AVRG', 'greedy'),]
-    mus = range(3, 11)
-    use_cluster_pickle = True
-    use_grammar_pickle = True
     num_graphs = 10
+    outdir = 'dumps'
+    use_pickle = True
 
     args = []
-    for name in names[-2:]:
+    for name in names[2: ]:
         input_graph, attr_name = get_graph(name)
         if attr_name == '':
-            grammar_types_1 = ['VRG']  # , 'NCE']  # no AVRG
-            mix_dict = None
-
+            mix_dict, inp_deg_ast, inp_attr_ast = None, None, None
         else:
-            pass
-        for clustering in clusterings:
-            for grammar_type_1 in grammar_types_1:
-                for grammar_type_2 in grammar_types_2:
-                    for mu in mus:
-                        for i in range(5):
-                            grammar_filename = os.path.join('dumps', 'grammars',
-                                                            f'{grammar_type_1}-{grammar_type_2}_{clustering}_{mu}_{i}.pkl')
-                            grammar = load_pickle(grammar_filename)
+            mix_dict = get_mixing_dict(input_graph, attr_name=attr_name)
+            inp_deg_ast = nx.degree_assortativity_coefficient(input_graph)
+            inp_attr_ast = nx.attribute_assortativity_coefficient(input_graph, attr_name)
 
-    # generate_graphs(grammar, num_graphs: int, grammar_type: str, outdir: str = 'dumps',
-    #                 mixing_dict: Union[None, Dict] = None, attr_name: Union[str, None] = None, inp_deg_ast: float = None,
-    #                 inp_attr_ast: float = None):
+        for grammar_filename in glob(f'./dumps/grammars/{name}/*'):
+            grammar = load_pickle(grammar_filename)
+            if isinstance(grammar, AttributedVRG):
+                grammar_type = 'AVRG'
+                for fancy in (True, False):
+                    args.append((name, grammar, num_graphs, grammar_type, outdir, mix_dict, attr_name, fancy,
+                                 inp_deg_ast, inp_attr_ast, use_pickle))
+                grammar_type = 'AVRG-greedy'
+                args.append((name, grammar, num_graphs, grammar_type, outdir, mix_dict, attr_name, fancy,
+                             inp_deg_ast, inp_attr_ast, use_pickle))
+            else:
+                assert isinstance(grammar, VRG)
+                grammar_type = 'VRG'
+                fancy = None
+                args.append((name, grammar, num_graphs, grammar_type, outdir, mix_dict, attr_name, fancy,
+                             inp_deg_ast, inp_attr_ast, use_pickle))
 
-    # inp_deg_ast = nx.degree_assortativity_coefficient(g)
-    # inp_attr_ast = nx.attribute_assortativity_coefficient(g, attr_name)
-    # grammar_type = ('AVRG', 'greedy')
-    # graphs = generate_graphs(grammar=vrg, num_graphs=10, mixing_dict=mix_dict, attr_name=attr_name, grammar_type=grammar_type,
-    #                          inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast)
+    parallel_async(func=generate_graphs, args=args)
+    # generate_graphs(grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, grammar_type: str, outdir: str = 'dumps',
+    #                 mixing_dict: Union[None, Dict] = None, attr_name: Union[str, None] = None, fancy = None,
+    #                 inp_deg_ast: float = None, inp_attr_ast: float = None)
+
     return
 
 
 if __name__ == '__main__':
+    batch_graph_runner()
     # batch_cluster_runner()
-    batch_grammar_runner()
+    # batch_grammar_runner()
     # get_grammars(name, clustering, grammar_type, mu, input_graph, use_cluster_pickle, use_grammar_pickle)
