@@ -191,7 +191,7 @@ class BaseExtractor(abc.ABC):
             # sort the unique rule rhs list
             logging.error('Sorting the rule RHS graph based on frequencies')
             self.grammar.unique_rule_rhs.sort(key=lambda item: item[1], reverse=True)
-
+        self.grammar.calculate_cost()
         return self.grammar
 
 
@@ -246,6 +246,7 @@ class VRGExtractor(BaseExtractor):
 
         rule = VRGRule(lhs_nt=nt, graph=sg)
         set_boundary_degrees(self.g, rule.graph)
+        rule.calculate_cost()
         rule.generalize_rhs_and_store_correspondence()
 
         return subtree, rule, boundary_edges
@@ -276,6 +277,7 @@ class AVRGExtractor(VRGExtractor):
 
         rule = AVRGRule(lhs_nt=nt, graph=sg, attr_name=self.attr_name)
         set_boundary_degrees(self.g, rule.graph)
+        rule.calculate_cost()
         rule.generalize_rhs_and_store_correspondence()
 
         return subtree, rule, boundary_edges
@@ -305,6 +307,7 @@ class NCEExtractor(BaseExtractor):
 
         rule = NCERule(lhs_nt=nt, graph=sg)
         set_boundary_degrees(self.g, rule.graph)
+        rule.calculate_cost()
         rule.generalize_rhs_and_store_correspondence()
         rule.update_boundary_nodes_edges(boundary_edges=boundary_edges)
 
