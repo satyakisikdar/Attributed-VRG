@@ -1,12 +1,12 @@
-from collections import deque
-from typing import Tuple, List, Set, Union, Any
+from typing import List, Set, Union
 
 import networkx as nx
 import numpy as np
-from anytree import Node, RenderTree
+from anytree import Node, RenderTree, LevelOrderIter
 from joblib import Parallel, delayed
 
-from VRG.src.utils import timer
+
+# from VRG.src.utils import timer
 
 
 def get_leaves(tnode) -> Set[int]:
@@ -97,86 +97,37 @@ class TreeNodeOld:
     def get_num_leaves(self) -> int:
         return len(self.leaves)
 
-
 name = 'a'  # needs to be global to make sure the nodes are named appropriately
 def create_tree(lst: List) -> TreeNode:
-    """
-    Creates a AnyTree treenode
-    :param lst:
-    :return:
-    """
-    global name
-    if len(lst) == 1 and (isinstance(lst[0], int) or isinstance(lst[0], np.int32)):  # leaf
-        tnode = TreeNode(name=lst[0])
-        return tnode
-
-    tnode = TreeNode(name=name)
-    name = chr(ord(name) + 1)
-
-    for sub_lst in lst:
-        child_tnode = create_tree(sub_lst)
-        child_tnode.parent = tnode
-
-    return tnode
-
-
-def create_tree_old(lst: List[Any]) -> TreeNode:
-    """
-    Creates a Tree from the list of lists
-    :param lst: nested list of lists
-    :return: root of the tree
-    """
-    key = 'a'
-
-    def create(lst):
-        nonlocal key
-
-        if len(lst) == 1 and isinstance(lst[0], int):  # detect leaf
-            return TreeNode(key=lst[0], is_leaf=True)
-        node = TreeNode(key=key)
-        key = chr(ord(key) + 1)
-
-        for item in lst:
-            node.kids.append(create(item))
-
-        return node
-
-    root = create(lst)
-
-    def update_info(node) -> Tuple[Set[Union[int, str]], int]:
+    def _create_tree(lst: List) -> TreeNode:
         """
-        updates the parent pointers, payloads, and the number of leaf nodes
-        :param node:
+        Creates a AnyTree treenode
+        :param lst:
         :return:
         """
-        if node.is_leaf:
-            node.make_leaf(new_key=node.key)  # the key doesn't change
-        else:
-            for kid in node.kids:
-                kid.parent = node
-                kid.level = node.level + 1
-                children, leaves = update_info(kid)
-                node.children.add(kid.key)
-                node.children.update(children)
-                node.leaves.update(leaves)
+        global name
+        if len(lst) == 1 and (isinstance(lst[0], int) or isinstance(lst[0], np.int32)):  # leaf
+            tnode = TreeNode(name=lst[0])
+            return tnode
 
-        return node.children, node.leaves
+        tnode = TreeNode(name=name)
+        name = chr(ord(name) + 1)
 
-    def relabel_tnodes(tnode):
-        q = deque()
-        q.append(tnode)
-        key = 'a'
-        while len(q) != 0:
-            tnode = q.popleft()
-            if tnode.is_leaf:
-                continue
-            tnode.key = key
-            key = chr(ord(key) + 1)
-            for kid in tnode.kids:
-                q.append(kid)
+        for sub_lst in lst:
+            child_tnode = create_tree(sub_lst)
+            child_tnode.parent = tnode
 
-    relabel_tnodes(root)
-    update_info(node=root)
+        return tnode
+
+    root = _create_tree(lst)
+
+    # cleanup the root -- get rid of internal nodes with exactly 1 child
+    tnodes = list(LevelOrderIter(root))
+    for node in tnodes:
+        if len(node.children) == 1:
+            child = node.children[0]
+            node.name = child.name
+            node.children = tuple()
 
     return root
 
@@ -197,7 +148,7 @@ def find_lca(tnode1: TreeNode, tnode2: TreeNode) -> TreeNode:
     return lca
 
 
-@timer
+# @timer
 def dasgupta_cost(g: nx.Graph, root: TreeNode, use_parallel: bool = True) -> float:
     """
     Assumes that the graph is unweighted for now
@@ -214,7 +165,6 @@ def dasgupta_cost(g: nx.Graph, root: TreeNode, use_parallel: bool = True) -> flo
             total_cost = sum(cost)
     else:
         total_cost = sum(dasgupta_parallel(u, v, tnodes) for u, v in g.edges())
-    print(f'Dasgupta cost: {total_cost:_d} parallel? {use_parallel}')
     return total_cost
 
 
@@ -237,7 +187,5 @@ if __name__ == '__main__':
     ]
 
     root = create_tree(list_of_list_clusters)
-    tnode_d = root.children[0].children[1]
-    tnode_d.children = tuple()
-    tnode_d.name = 'nt1'
+
     print(RenderTree(root))
