@@ -2,37 +2,36 @@ import argparse
 import logging
 import math
 import os
-import sys;
-
-
-sys.path.extend(['../', '../../', './', '../../../'])
+import sys
 from pathlib import Path
-
 from time import time
 from typing import Any, List, Union, Dict, Tuple
 
 import networkx as nx
-import seaborn as sns; sns.set_style('white')
-
+import seaborn as sns
 from tqdm import tqdm
 
-from VRG.src.consensus_clustering import get_consensus_root
 import VRG.src.partitions as partitions
 from VRG.src.LightMultiGraph import LightMultiGraph
-from VRG.src.Tree import create_tree, dasgupta_cost
+from VRG.src.MDL import graph_dl
+from VRG.src.Tree import create_tree
 from VRG.src.VRG import VRG, NCE, AttributedVRG
+from VRG.src.consensus_clustering import get_consensus_root
 from VRG.src.extract import NCEExtractor, VRGExtractor, AVRGExtractor
 from VRG.src.generate import RandomGenerator, NCEGenerator, AttributedRandomGenerator, GreedyAttributeRandomGenerator
-from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer
+from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer, nx_to_lmg, get_mixing_dict
 
 sys.setrecursionlimit(1_000_000)
-logging.basicConfig(level=logging.DEBUG, format="%(message)s")
-# logging.basicConfig(level=logging.ERROR, format="%(message)s")
+# logging.basicConfig(level=logging.DEBUG, format="%(message)s")
+logging.basicConfig(level=logging.ERROR, format="%(message)s")
 logging.getLogger('matplotlib.font_manager').disabled = True
+sys.path.extend(['../', '../../', './', '../../../', '/home/ssikdar/tmp_dir'])
+sns.set_style('white')
 
 
-def get_graph(gname: str = 'sample') -> nx.Graph:
+def get_graph(gname: str = 'sample') -> Tuple[nx.Graph, str]:
     start_time = time()
+    attr_name = ''
     if gname == 'sample':
         g = nx.Graph()
         g.add_nodes_from(range(5), color='blue')
@@ -46,8 +45,11 @@ def get_graph(gname: str = 'sample') -> nx.Graph:
                           (6, 7), (6, 8),
                           (7, 8)])  # properly labeled
         g.name = 'sample'
+        attr_name = 'color'
     elif gname == 'karate':
         g = nx.karate_club_graph()
+        attr_name = 'club'
+        g.name = 'karate'
     elif gname == 'BA':
         g = nx.barabasi_albert_graph(10, 2, seed=42)
         # g = nx.MultiGraph(g)
@@ -60,6 +62,7 @@ def get_graph(gname: str = 'sample') -> nx.Graph:
             g = nx.read_gpickle(f'../snap_data/cleaned/{gname}_lcc_attr.gpickle')
         elif gname in ('polblogs', 'polbooks', 'football', 'bipartite-10-10'):
             g = nx.read_gml(f'./input/{gname}.gml')
+            attr_name = 'value'
         else:
             path = f'./input/{gname}.g'
             g = nx.read_edgelist(path, nodetype=int, create_using=nx.Graph())
@@ -73,13 +76,14 @@ def get_graph(gname: str = 'sample') -> nx.Graph:
         g.name = name
 
     end_time = round(time() - start_time, 2)
-    logging.error(f'Graph: {gname}, n = {g.order():_d}, m = {g.size():_d} read in {round(end_time, 3):_g}s.')
+    dl = graph_dl(g)
+    logging.error(f'Graph: {gname}, n = {g.order():_d}, m = {g.size():_d}, dl = {dl:_g} bits read in {round(end_time, 3):_g}s.')
 
-    return g
+    return g, attr_name
 
 
 @timer
-def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool, max_size=None) -> Any:
+def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool) -> Any:
     """
     wrapper method for getting dendrogram. uses an existing pickle if it can.
     :param g: graph
@@ -125,8 +129,7 @@ def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool, 
                 os.remove(sc_path)
             list_of_list_clusters = get_consensus_root(g=g, gname=g.name)
         elif clustering in ('leiden', 'louvain', 'infomap', 'labelprop'):
-            if max_size is None: max_size = g.order()
-            list_of_list_clusters = partitions.louvain_leiden_infomap_label_prop(g, method=clustering, max_size=max_size)
+            list_of_list_clusters = partitions.louvain_leiden_infomap_label_prop(g, method=clustering)
         elif clustering == 'cond':
             list_of_list_clusters = partitions.approx_min_conductance_partitioning(g)
         elif clustering == 'spectral':
@@ -160,49 +163,39 @@ def make_dirs(outdir: str, name: str) -> None:
 
 
 def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: int, input_graph: nx.Graph,
-                 use_grammar_pickle: bool, use_cluster_pickle: bool, count: int = 1, attr_name: str = '') -> List[Union[VRG, NCE]]:
+                 use_grammar_pickle: bool, use_cluster_pickle: bool, attr_name: str, count: int = 1) -> List[Union[VRG, NCE]]:
     """
     Dump the stats
     :return:
     """
+    if input_graph.name != name:
+        input_graph.name = name
     outdir = 'dumps'
     make_dirs(outdir, name)  # make the directories if needed
 
-    print(f'Extracting {count} grammars')
+    # print(f'Extracting {count} grammars')
     grammars = []
 
     for i in range(count):
         grammar_filename = f'{outdir}/grammars/{name}/{grammar_type[0]}-{grammar_type[1].replace("_", "-")}_{clustering}_{mu}_{i}.pkl'
+        logging.error(f'Extracting grammar: {grammar_filename}')
         if use_grammar_pickle and check_file_exists(grammar_filename):
             logging.error(f'Using pickled grammar from {grammar_filename!r}')
             grammar = load_pickle(grammar_filename)
         else:
-            g_copy = input_graph.copy()
-            g_copy.name = input_graph.name
-            list_of_list_clusters = get_clustering(g=g_copy, outdir=f'{outdir}/trees/{name}', clustering=clustering,
-                                                   use_pickle=use_cluster_pickle, max_size=mu)
-            if isinstance(list_of_list_clusters, list):
-                root = create_tree(list_of_list_clusters)
-            else:
-                root = list_of_list_clusters
+            list_of_list_clusters = get_clustering(g=input_graph, outdir=f'{outdir}/trees/{name}',
+                                                   clustering=clustering, use_pickle=use_cluster_pickle)
+            root = create_tree(list_of_list_clusters) if isinstance(list_of_list_clusters, list) else list_of_list_clusters
+            # dc = dasgupta_cost(g=g, root=root, use_parallel=True)
+            lmg: LightMultiGraph = nx_to_lmg(nx_g=input_graph)
 
-            dc_serial = dasgupta_cost(g=g, root=root, use_parallel=False)
-            dc_par = dasgupta_cost(g=g, root=root, use_parallel=True)
-            print(f'Serial {dc_serial} parall {dc_par}')
-            return
-
-            g_copy = LightMultiGraph()
-            for n, d in input_graph.nodes(data=True):
-                g_copy.add_node(n, **d)
-            g_copy.add_edges_from(input_graph.edges(data=True))
-            g_copy.name = name
             if grammar_type[0] == 'VRG':
-                extractor = VRGExtractor(g=g_copy, type=grammar_type[1], mu=mu, root=root, clustering=clustering)
+                extractor = VRGExtractor(g=lmg, type=grammar_type[1], mu=mu, root=root, clustering=clustering)
             elif grammar_type[0] == 'NCE':
-                extractor = NCEExtractor(g=g_copy, type=grammar_type[1], mu=mu, root=root, clustering=clustering)
+                extractor = NCEExtractor(g=lmg, type=grammar_type[1], mu=mu, root=root, clustering=clustering)
             elif grammar_type[0] == 'AVRG':
                 assert attr_name != ''
-                extractor = AVRGExtractor(g=g_copy, attr_name=attr_name, type=grammar_type[1], clustering=clustering,
+                extractor = AVRGExtractor(g=lmg, attr_name=attr_name, type=grammar_type[1], clustering=clustering,
                                           mu=mu, root=root)
             else:
                 raise NotImplementedError(f'Invalid grammar type {grammar_type!r}')
@@ -214,18 +207,27 @@ def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: 
     return grammars
 
 
-def generate_graphs(grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, grammar_type: str, outdir: str = 'dumps',
-                    mixing_dict: Union[None, Dict] = None, attr_name: Union[str, None] = None,
-                    inp_deg_ast: float = None, inp_attr_ast: float = None) -> List[nx.Graph]:
+def generate_graphs(name: str, grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, grammar_type: str, outdir: str = 'dumps',
+                    mixing_dict: Union[None, Dict] = None, attr_name: Union[str, None] = None, fancy=None,
+                    inp_deg_ast: float = None, inp_attr_ast: float = None, use_pickle: bool = False) -> List[nx.Graph]:
 
+    make_dirs(outdir=outdir, name=name)
+    if fancy and grammar_type == 'AVRG': grammar_type += '-fancy'
+    graphs_filename = f'{outdir}/graphs/{name}/{grammar_type}_{grammar.clustering}_{grammar.mu}_{num_graphs}.pkl'
+
+    if use_pickle and check_file_exists(graphs_filename):
+        return load_pickle(graphs_filename)
+
+    logging.error(f'Graphs filename: {graphs_filename!r}')
     if isinstance(grammar, AttributedVRG):
-        assert attr_name != ''
+        assert attr_name != '' and fancy is not None
         if 'greedy' in grammar_type:
             assert inp_attr_ast is not None and inp_deg_ast is not None
             gen = GreedyAttributeRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name,
                                                  inp_attr_ast=inp_attr_ast, inp_deg_ast=inp_deg_ast)
         else:
-            gen = AttributedRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name)
+            gen = AttributedRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name,
+                                            use_fancy_rewiring=fancy)
     elif isinstance(grammar, VRG):
         gen = RandomGenerator(grammar=grammar)
     elif isinstance(grammar, NCE):
@@ -234,8 +236,6 @@ def generate_graphs(grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, gr
         raise NotImplementedError(f'Invalid grammar type {type(grammar)!r}')
 
     graphs = gen.generate(num_graphs=num_graphs)
-    grammar_type = grammar_type[0] + '-' + grammar_type[1].replace('_', '-')
-    graphs_filename = f'{outdir}/graphs/{name}/{grammar_type}_{clustering}_{mu}_{len(graphs)}.pkl'
     dump_pickle(graphs, graphs_filename)
 
     return graphs
@@ -269,16 +269,16 @@ if __name__ == '__main__':
         use_grammar_pickle, clustering, grammar_type, mu, n = args.graph, args.attr_name, args.cluster_pickle,\
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
-    name = 'polblogs'; attr_name = 'value'
+    name = 'karate'
     # name = 'karate'; attr_name = 'club'
     mu = 5; grammar_type = ('AVRG', 'all_tnodes')
     use_grammar_pickle = False; use_cluster_pickle = True; n = 10
     inp_deg_ast, inp_attr_ast = None, None
 
-    g = get_graph(name)
+    g, attr_name = get_graph(name)
     g.name = name
     if attr_name != '':
-        mix_dict = nx.attribute_mixing_dict(g, attribute=attr_name, normalized=True)
+        mix_dict = get_mixing_dict(g, attr_name=attr_name)
         print('Mixing dict:', mix_dict)
     else:
         mix_dict = None
@@ -287,9 +287,9 @@ if __name__ == '__main__':
                        use_grammar_pickle=use_grammar_pickle, use_cluster_pickle=use_cluster_pickle, attr_name=attr_name)[0]
 
     print(vrg)
-    # inp_deg_ast = nx.degree_assortativity_coefficient(g)
-    # inp_attr_ast = nx.attribute_assortativity_coefficient(g, attr_name)
-    # grammar_type = ('AVRG', 'greedy')
-    # graphs = generate_graphs(grammar=vrg, num_graphs=1, mixing_dict=mix_dict, attr_name=attr_name, grammar_type=grammar_type,
-    #                          inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast)
-    # print(graphs)
+    inp_deg_ast = nx.degree_assortativity_coefficient(g)
+    inp_attr_ast = nx.attribute_assortativity_coefficient(g, attr_name)
+    grammar_type = 'AVRG'
+    graphs = generate_graphs(name=name, grammar=vrg, num_graphs=10, mixing_dict=mix_dict, attr_name=attr_name,
+                             grammar_type=grammar_type, inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast, fancy=False)
+    print(graphs)
