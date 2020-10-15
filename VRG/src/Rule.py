@@ -12,17 +12,18 @@ class BaseRule:
     """
     Base class for Rule
     """
-    __slots__ = 'lhs_nt', 'graph', 'level', 'cost', 'frequency', 'id', 'rhs_non_terminals', 'nodes_covered'
+    __slots__ = 'lhs_nt', 'graph', 'level', 'cost', 'frequency', 'id', 'rhs_non_terminals', 'nodes_covered', 'is_attributed'
 
-    def __init__(self, lhs_nt: NonTerminal, graph: LightMultiGraph, level: int = 0, frequency: int = 1):
+    def __init__(self, lhs_nt: NonTerminal, graph: LightMultiGraph, is_attributed: bool, level: int = 0, frequency: int = 1):
         self.lhs_nt = lhs_nt  # the left hand side: the number of boundary edges
         self.graph = graph  # the right hand side subgraph
         self.level = level  # level of discovery in the tree (the root is at 0)
         self.frequency = frequency  # frequency of occurence
         self.id = None  # id of the rule
-
+        self.cost = 0
         self.rhs_non_terminals: List[NonTerminal] = []  # list of non-terminals in the RHS graph
         self.nodes_covered: Set[int] = set()  # set of nodes in the original graph that is covered by this rule
+        self.is_attributed: bool = is_attributed  # flag for attributed
 
         for node, data in self.graph.nodes(data=True):
             if 'nt' in data:  # the node in the RHS is a NonTerminal node
@@ -31,7 +32,6 @@ class BaseRule:
                 # self.nodes_covered[0].update(nt.nodes_covered)
             else:
                 self.nodes_covered.add(node)
-        self.calculate_cost()
         return
 
     def __str__(self) -> str:
@@ -74,18 +74,20 @@ class BaseRule:
         return hash((self.lhs_nt.size, g))
 
     def __deepcopy__(self, memodict={}):
-        return BaseRule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, cost=self.cost,
-                        frequency=self.frequency)
+        return BaseRule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, frequency=self.frequency,
+                        is_attributed=self.is_attributed)
 
-    def calculate_cost(self):
+    def calculate_cost(self) -> float:
+        if self.cost != 0:
+            return self.cost
         b_deg = nx.get_node_attributes(self.graph, 'b_deg')
         assert len(b_deg) > 0, 'invalid b_deg'
         max_boundary_degree = max(b_deg.values())
 
-        self.cost = MDL.gamma_code(self.lhs_nt.size + 1) + MDL.graph_dl(self.graph) + \
+        self.cost = MDL.gamma_code(self.lhs_nt.size + 1) + MDL.graph_dl(self.graph, self.is_attributed) + \
                     MDL.gamma_code(self.frequency + 1) + \
                     self.graph.order() * MDL.gamma_code(max_boundary_degree + 1)
-        return
+        return self.cost
 
     def contract_rhs(self):
         pass
@@ -161,12 +163,11 @@ class VRGRule(BaseRule):
     """
     Rule class for vanilla VRGs
     """
-    def __init__(self, lhs_nt, graph, level=0, cost=0, frequency=1):
-        super().__init__(lhs_nt=lhs_nt, graph=graph, level=level, cost=cost, frequency=frequency)
+    def __init__(self, lhs_nt, graph, level=0, frequency=1):
+        super().__init__(lhs_nt=lhs_nt, graph=graph, level=level, frequency=frequency, is_attributed=False)
 
     def __deepcopy__(self, memodict={}):
-        return VRGRule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, cost=self.cost,
-                       frequency=self.frequency)
+        return VRGRule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, frequency=self.frequency)
 
 
 class AVRGRule(BaseRule):
@@ -174,7 +175,7 @@ class AVRGRule(BaseRule):
     Rules for attributed VRG
     """
     def __init__(self, lhs_nt: NonTerminal, graph: LightMultiGraph, attr_name: str):
-        super().__init__(lhs_nt, graph)
+        super().__init__(lhs_nt, graph, is_attributed=True)
         self.attr_name = attr_name
         return
 
@@ -200,14 +201,13 @@ class NCERule(BaseRule):
     Rule class for Neighborhood Controlled Embedding
     """
     def __init__(self, lhs_nt, graph, level=0, cost=0, frequency=1):
-        super().__init__(lhs_nt=lhs_nt, graph=graph, level=level, cost=cost, frequency=frequency)
+        super().__init__(lhs_nt=lhs_nt, graph=graph, level=level, frequency=frequency, is_attributed=False)
         self.boundary_nodes: Set = set()  # store the boundary nodes
         self.boundary_edges: Set = set()  # store the boundary edges
         return
 
     def __deepcopy__(self, memodict={}):
-        return NCERule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, cost=self.cost,
-                        frequency=self.frequency)
+        return NCERule(lhs_nt=self.lhs_nt, graph=self.graph, level=self.level, frequency=self.frequency)
 
     def update_boundary_nodes_edges(self, boundary_edges: List):
         """
