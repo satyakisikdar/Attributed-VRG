@@ -107,8 +107,7 @@ def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool) 
 
     list_of_list_filename = os.path.join(outdir, f'{clustering}_list.pkl')
 
-    if not os.path.exists(f'./{outdir}'):
-        os.makedirs(f'./{outdir}')
+    make_dirs(outdir='/data/ssikdar/attributed-vrg/dumps/', name=g.name)
 
     if check_file_exists(list_of_list_filename) and use_pickle:
         logging.error(f'Using existing pickle for {clustering!r} clustering\n')
@@ -148,29 +147,28 @@ def make_dirs(outdir: str, name: str) -> None:
     :param name:
     :return:
     """
-    subdirs = ('grammars', 'graphs', 'rule_orders', 'trees', 'grammar_stats')
+    subdirs = ('grammars', 'graphs', 'rule_orders', 'trees', 'grammar_stats', 'generators')
 
     for dir in subdirs:
-        dir_path = f'./{outdir}/{dir}/'
+        dir_path = os.path.join(outdir, dir)
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
         if dir == 'grammar_stats':
             continue
-        dir_path += f'{name}'
+        dir_path = os.path.join(dir_path, name)
         if not os.path.exists(dir_path):
             os.makedirs(dir_path)
     return
 
 
 def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: int, input_graph: nx.Graph,
-                 use_grammar_pickle: bool, use_cluster_pickle: bool, attr_name: str, count: int = 1) -> List[Union[VRG, NCE]]:
+                 use_grammar_pickle: bool, use_cluster_pickle: bool, attr_name: str, outdir: str = 'dumps', count: int = 1) -> List[Union[VRG, NCE]]:
     """
     Dump the stats
     :return:
     """
     if input_graph.name != name:
         input_graph.name = name
-    outdir = 'dumps'
     make_dirs(outdir, name)  # make the directories if needed
 
     # print(f'Extracting {count} grammars')
@@ -209,27 +207,36 @@ def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: 
 
 def generate_graphs(name: str, grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, grammar_type: str, outdir: str = 'dumps',
                     mixing_dict: Union[None, Dict] = None, attr_name: Union[str, None] = None, fancy=None,
-                    inp_deg_ast: float = None, inp_attr_ast: float = None, use_pickle: bool = False) -> List[nx.Graph]:
+                    inp_deg_ast: float = None, inp_attr_ast: float = None, use_pickle: bool = False,
+                    save_snapshots: bool = False, alpha: Union[None, float] = None) -> List[nx.Graph]:
 
     make_dirs(outdir=outdir, name=name)
     if fancy and grammar_type == 'AVRG': grammar_type += '-fancy'
+    if alpha is not None: grammar_type += f'-{int(alpha * 100)}'
     graphs_filename = f'{outdir}/graphs/{name}/{grammar_type}_{grammar.clustering}_{grammar.mu}_{num_graphs}.pkl'
+    gen_filename = f'{outdir}/generators/{name}/{grammar_type}_{grammar.clustering}_{grammar.mu}_{num_graphs}.pkl'
 
     if use_pickle and check_file_exists(graphs_filename):
-        return load_pickle(graphs_filename)
+        if save_snapshots:
+            if check_file_exists(gen_filename):
+                return
+        else:
+            return
 
     logging.error(f'Graphs filename: {graphs_filename!r}')
     if isinstance(grammar, AttributedVRG):
         assert attr_name != '' and fancy is not None
         if 'greedy' in grammar_type:
             assert inp_attr_ast is not None and inp_deg_ast is not None
+            assert alpha is not None
             gen = GreedyAttributeRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name,
-                                                 inp_attr_ast=inp_attr_ast, inp_deg_ast=inp_deg_ast)
+                                                 inp_attr_ast=inp_attr_ast, inp_deg_ast=inp_deg_ast,
+                                                 save_snapshots=save_snapshots, alpha=alpha)
         else:
             gen = AttributedRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name,
-                                            use_fancy_rewiring=fancy)
+                                            use_fancy_rewiring=fancy, save_snapshots=save_snapshots)
     elif isinstance(grammar, VRG):
-        gen = RandomGenerator(grammar=grammar)
+        gen = RandomGenerator(grammar=grammar, save_snapshots=save_snapshots)
     elif isinstance(grammar, NCE):
         gen = NCEGenerator(grammar=grammar)
     else:
@@ -237,6 +244,7 @@ def generate_graphs(name: str, grammar: Union[VRG, NCE, AttributedVRG], num_grap
 
     graphs = gen.generate(num_graphs=num_graphs)
     dump_pickle(graphs, graphs_filename)
+    dump_pickle(gen, gen_filename)
 
     return graphs
 
@@ -272,7 +280,7 @@ if __name__ == '__main__':
     name = 'karate'
     # name = 'karate'; attr_name = 'club'
     mu = 5; grammar_type = ('AVRG', 'all_tnodes')
-    use_grammar_pickle = False; use_cluster_pickle = True; n = 10
+    use_grammar_pickle = True; use_cluster_pickle = True; n = 10
     inp_deg_ast, inp_attr_ast = None, None
 
     g, attr_name = get_graph(name)
@@ -291,5 +299,6 @@ if __name__ == '__main__':
     inp_attr_ast = nx.attribute_assortativity_coefficient(g, attr_name)
     grammar_type = 'AVRG'
     graphs = generate_graphs(name=name, grammar=vrg, num_graphs=10, mixing_dict=mix_dict, attr_name=attr_name,
-                             grammar_type=grammar_type, inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast, fancy=False)
+                             grammar_type=grammar_type, inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast, fancy=False,
+                             save_snapshots=True)
     print(graphs)

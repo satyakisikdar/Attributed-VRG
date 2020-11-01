@@ -12,10 +12,10 @@ import numpy as np
 import networkx as nx
 import subprocess as sub
 
-import matplotlib
+# import matplotlib
 
 from VRG.src.Tree import TreeNode
-matplotlib.use('Qt5agg')
+# matplotlib.use('Qt5agg')
 
 
 def check_file_exists(path) -> bool:

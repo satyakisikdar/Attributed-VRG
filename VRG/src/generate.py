@@ -6,13 +6,12 @@ from typing import List, Dict, Tuple, Set, Union
 
 import networkx as nx
 import numpy as np
-from joblib import delayed, Parallel
 
 from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.NonTerminal import NonTerminal
 from VRG.src.Rule import VRGRule, NCERule
 from VRG.src.VRG import VRG, NCE
-from VRG.src.utils import find_boundary_edges, timer
+from VRG.src.utils import find_boundary_edges, timer, get_terminal_subgraph
 
 
 class BaseGenerator(abc.ABC):
@@ -20,10 +19,10 @@ class BaseGenerator(abc.ABC):
     Base class for generating graphs from a RandomVRG
     """
     __slots__ = 'grammar', 'strategy', '_gen_graph', 'current_non_terminal_nodes', 'rule_ordering',\
-                'generated_graphs',
+                'generated_graphs', 'save_snapshots'
     allowed_strategies = 'random', 'greedy'
 
-    def __init__(self, grammar: Union[VRG, NCE], strategy: str) -> None:
+    def __init__(self, grammar: Union[VRG, NCE], strategy: str, save_snapshots: bool) -> None:
         assert strategy in BaseGenerator.allowed_strategies, f'Invalid strategy {strategy}, ' \
                                                              f'choose from {BaseGenerator.allowed_strategies}'
         self.grammar: Union[VRG, NCE] = grammar  # RandomVRG object
@@ -32,6 +31,9 @@ class BaseGenerator(abc.ABC):
         self.generated_graphs: List[nx.Graph] = []  # list of generated graphs
         self._gen_graph: Union[None, LightMultiGraph] = None  # generated graph
         self.rule_ordering: List[int] = []  # sequence of rule ids used to generate the graph
+        self.save_snapshots = save_snapshots
+        self.gen_snapshots: List[LightMultiGraph] = []  # stores the individual stages for one generation
+        self.all_gen_snapshots: List[List[LightMultiGraph]] = []  # stores the snapshots for all  different generations
         return
 
     @abc.abstractmethod
@@ -99,20 +101,20 @@ class BaseGenerator(abc.ABC):
                     self._gen_graph.add_edge(u, v)
         return
 
-    def _generate(self):
+    def _generate(self, i: int):
         self._gen_graph = LightMultiGraph()  # reset the _gen_graph
+        self.gen_snapshots = []  # reset the snapshot list
         g = self._gen()
-        # nx_g = nx.Graph(g)  # turn the graph into NetworkX graph
+
         nx_g = nx.Graph()
         for k, v in g.graph.items():  # copy over the graph level attributes
             nx_g.graph[k] = v
 
-        for n, d in g.nodes(data=True):
-            nx_g.add_node(n, **d)
+        for n, d in g.nodes(data=True): nx_g.add_node(n, **d)
         nx_g.add_edges_from(g.edges())
         nx_g.remove_edges_from(nx.selfloop_edges(g))
         # logging.error(f'({i+1:02d}) Generated graph: n={nx_g.order():_d} m={nx_g.size():_d}')
-        return nx_g
+        return nx_g, self.gen_snapshots
 
     @timer
     def generate(self, num_graphs: int) -> List[nx.Graph]:
@@ -122,9 +124,14 @@ class BaseGenerator(abc.ABC):
         :return:
         """
         self.generated_graphs: List[nx.Graph] = []
-        with Parallel(n_jobs=5, backend='multiprocessing') as parallel:
-            self.generated_graphs = parallel(delayed(self._generate)() for i in range(num_graphs))
-        # self.generated_graphs = [self._generate() for i in range(num_graphs)]
+        # with Parallel(n_jobs=5, backend='multiprocessing') as parallel:
+        #     things = parallel(delayed(self._generate)(i) for i in range(num_graphs))
+        things = [self._generate(i) for i in range(num_graphs)]
+        for g, snapshot in things:
+            self.generated_graphs.append(g)
+            self.all_gen_snapshots.append(snapshot)
+
+
         return self.generated_graphs
 
     @abc.abstractmethod
@@ -136,8 +143,8 @@ class BaseGenerator(abc.ABC):
 
 
 class RandomGenerator(BaseGenerator):
-    def __init__(self, grammar: VRG) -> None:
-        super().__init__(grammar=grammar, strategy='random')
+    def __init__(self, grammar: VRG, save_snapshots: bool = False) -> None:
+        super().__init__(grammar=grammar, strategy='random', save_snapshots=save_snapshots)
 
     def select_rule(self) -> Tuple[int, VRGRule, Set[int], Dict]:
         """
@@ -164,12 +171,15 @@ class RandomGenerator(BaseGenerator):
 
         self._gen_graph = LightMultiGraph()
         self._gen_graph.add_node(0, nt=starting_nt)
+        if self.save_snapshots: self.gen_snapshots.append(self._gen_graph.copy())
+
         self.current_non_terminal_nodes = {0}  # first non-terminal is node 0
 
         while len(self.current_non_terminal_nodes) != 0:  # continue until there are non-terminals remaining
             chosen_nt_node, chosen_rule, _, _ = self.select_rule()  # throw out the set of covered nodes and node correspondence
             self.current_non_terminal_nodes.remove(chosen_nt_node)  # remove the non-terminal from the set
             self.update_graph(chosen_rule=chosen_rule, chosen_nt_node=chosen_nt_node)
+            if self.save_snapshots: self.gen_snapshots.append(self._gen_graph.copy())  # add the current graph after update
 
         logging.debug(f'Generated graph: n={self._gen_graph.order():_d} m={self._gen_graph.size():_d}')
         return self._gen_graph
@@ -179,8 +189,9 @@ class AttributedRandomGenerator(RandomGenerator):
     """
     Attributed graphs generated Random style
     """
-    def __init__(self, grammar: VRG, mixing_dict: Dict, attr_name: str, use_fancy_rewiring: bool):
-        super().__init__(grammar)
+    def __init__(self, grammar: VRG, mixing_dict: Dict, attr_name: str, use_fancy_rewiring: bool,
+                 save_snapshots: bool = False):
+        super().__init__(grammar, save_snapshots=save_snapshots)
         self.mixing_dict = mixing_dict
         self.attr_name = attr_name
         self.fancy_rewirings = 0
@@ -195,19 +206,21 @@ class AttributedRandomGenerator(RandomGenerator):
 
         self._gen_graph = LightMultiGraph()
         self._gen_graph.add_node(0, nt=starting_nt)
+        if self.save_snapshots: self.gen_snapshots.append(self._gen_graph.copy())
+
         self.current_non_terminal_nodes = {0}  # first non-terminal is node 0
 
         while len(self.current_non_terminal_nodes) != 0:  # continue until there are non-terminals remaining
             chosen_nt_node, chosen_rule, _, _ = self.select_rule()  # throw out the set of covered nodes and node correspondence
             self.current_non_terminal_nodes.remove(chosen_nt_node)  # remove the non-terminal from the set
             self.update_graph(chosen_rule=chosen_rule, chosen_nt_node=chosen_nt_node)
-
+            if self.save_snapshots: self.gen_snapshots.append(self._gen_graph.copy())
         if self.fancy_rewirings == 0:
             fancy_frac = 0
         else:
             fancy_frac = 100 * self.fancy_rewirings/self.total_rewirings
         logging.error(f'Generated graph: n={self._gen_graph.order():_d} m={self._gen_graph.size():_d} fancy rewirings'
-                      f'({self.fancy_rewirings:_d} / {self.total_rewirings:_d}) {round(fancy_frac, 3)}%')
+                      f'({self.fancy_rewirings:_d}/{self.total_rewirings:_d}) {round(fancy_frac, 3)}%')
 
         self._gen_graph.graph['total_rewirings'] = self.total_rewirings
         self._gen_graph.graph['fancy_rewirings'] = self.fancy_rewirings
@@ -352,10 +365,12 @@ class AttributedRandomGenerator(RandomGenerator):
 
 
 class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
-    def __init__(self, grammar: VRG, mixing_dict: Dict, attr_name: str, inp_deg_ast: float, inp_attr_ast: float):
-        super().__init__(grammar, mixing_dict, attr_name, use_fancy_rewiring=True)
+    def __init__(self, grammar: VRG, mixing_dict: Dict, attr_name: str, inp_deg_ast: float, inp_attr_ast: float,
+                 save_snapshots: bool = False, alpha: float = 0.5):
+        super().__init__(grammar, mixing_dict, attr_name, use_fancy_rewiring=True, save_snapshots=save_snapshots)
         self.inp_deg_ast = inp_deg_ast  # input degree assortativity
         self.inp_attr_ast = inp_attr_ast  # input attribute assortativity
+        self.alpha = alpha
         return
 
     def update_graph(self, chosen_nt_node: int, chosen_rule: VRGRule,
@@ -430,12 +445,14 @@ class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
                     for rule_t in rule_terminal_list:
                         self._gen_graph.add_edge(graph_t, node_label[rule_t])  # add the edge
                         # calculate change in assortativity
-                        new_deg_asst = nx.degree_assortativity_coefficient(self._gen_graph)
-                        new_attr_asst = nx.attribute_assortativity_coefficient(self._gen_graph, self.attr_name)
+                        new_terminal_subg = get_terminal_subgraph(self._gen_graph)
 
-                        cost = math.fabs(self.inp_deg_ast - new_deg_asst)
+                        new_deg_asst = nx.degree_assortativity_coefficient(new_terminal_subg)
+                        new_attr_asst = nx.attribute_assortativity_coefficient(new_terminal_subg, self.attr_name)
+
+                        cost = self.alpha * math.fabs(self.inp_deg_ast - new_deg_asst)
                         if not np.isnan(new_attr_asst):  # attribute assortativity is nan when all nodes have the same attribute
-                            cost += math.fabs(self.inp_attr_ast - new_attr_asst)
+                            cost += (1 - self.alpha) * math.fabs(self.inp_attr_ast - new_attr_asst)
 
                         logging.debug(f'Rule_t: {rule_t}, cost: {cost!r}, prev best: {best_rule_terminal!r}')
 
@@ -489,9 +506,9 @@ class GreedyGenerator(BaseGenerator):
     Makes sure a certain set of nodes are generated
     """
     def __init__(self, grammar: NCE, input_graph: Union[LightMultiGraph, nx.Graph], fraction: Union[None, float] = None,
-                 keep_nodes: Union[Set, None] = None):
+                 keep_nodes: Union[Set, None] = None, save_snapshots: bool = False):
         assert isinstance(grammar, NCE), 'Incorrect variant of grammar. Needs NCE'
-        super().__init__(grammar, strategy='greedy')
+        super().__init__(grammar, strategy='greedy', save_snapshots=save_snapshots)
         self.input_graph: Union[nx.Graph, LightMultiGraph] = input_graph
 
         if fraction is None and keep_nodes is None:
@@ -606,6 +623,7 @@ class GreedyGenerator(BaseGenerator):
         self.missing_nodes = set(self.keep_these_nodes)  # reset the missing nodes for each gen
         self._gen_graph = LightMultiGraph()
         self._gen_graph.add_node(0, nt=starting_nt)
+
         self.current_non_terminal_nodes = {0}  # first non-terminal is node 0
 
         while len(self.current_non_terminal_nodes) != 0:  # continue until there are non-terminals remaining

@@ -29,6 +29,47 @@ clusters = {}  # stores the cluster members
 original_graph = None  # to keep track of the original edges covered
 
 
+def get_terminal_subgraph(g):
+    """
+    Return the subgraph induced by terminal nodes in g
+    :param g:
+    :return:
+    """
+    terminals = {node for node, d in g.nodes(data=True) if 'nt' not in d}
+    return g.subgraph(terminals).copy()
+
+
+def get_compatibility_matrix(g: nx.Graph, attr_name: str):
+    """
+    From Danai's heterophily paper
+    :param g:
+    :param attr_name:
+    :return:
+    """
+    values = set(nx.get_node_attributes(g, attr_name).values())
+    mapping = {val: i for i, val in enumerate(values)}
+    print(mapping)
+    C = nx.attribute_mixing_matrix(g, attribute=attr_name, mapping=mapping, normalized=False)
+    np.fill_diagonal(C, C.diagonal() / 2)
+
+    D = np.diag(np.diag(C))
+    e = np.ones(shape=(len(mapping), 1))
+
+    h = float((e.T @ D @ e) / (e.T @ C @ e))
+
+    Y = np.zeros(shape=(g.order(), len(mapping)))
+    for n, d in g.nodes(data=True):
+        attr = d[attr_name]
+        Y[n, mapping[attr]] = 1
+    A = nx.adjacency_matrix(g)
+    E = np.ones(shape=(A.shape[0], len(mapping)))
+
+    H = (Y.T @ A @ Y) / (Y.T @ A @ E)
+
+    return_d = dict(homophily_ratio=h, compatibility_mat=H, attr_name=attr_name, mapping=mapping)
+    return return_d
+
+
 def find_boundary_edges(g: LightMultiGraph, nbunch: Set[int]) -> List[Tuple]:
     """
         Collect all of the boundary edges (i.e., the edges
