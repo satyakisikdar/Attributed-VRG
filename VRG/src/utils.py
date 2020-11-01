@@ -29,6 +29,16 @@ clusters = {}  # stores the cluster members
 original_graph = None  # to keep track of the original edges covered
 
 
+def get_terminal_subgraph(g):
+    """
+    Return the subgraph induced by terminal nodes in g
+    :param g:
+    :return:
+    """
+    terminals = {node for node, d in g.nodes(data=True) if 'nt' not in d}
+    return g.subgraph(terminals).copy()
+
+
 def get_compatibility_matrix(g: nx.Graph, attr_name: str):
     """
     From Danai's heterophily paper
