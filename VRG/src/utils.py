@@ -3,6 +3,7 @@ import logging
 import pickle
 import sys
 import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
@@ -27,6 +28,31 @@ sns.set(); sns.set_style("darkgrid")
 
 clusters = {}  # stores the cluster members
 original_graph = None  # to keep track of the original edges covered
+
+
+def matrix_distance(A: np.array, B: np.array, kind: str) -> float:
+    # pad matrices such that their orders match
+    if A.shape[0] > B.shape[0]: B = _pad(B, A.shape[0])
+    elif A.shape[0] < B.shape[0]: A = _pad(A, B.shape[0])
+
+    assert A.shape[0] == B.shape[0]
+
+    if kind == 'L1': d = np.sum(np.abs(A - B))
+    elif kind == 'L2': d = np.sqrt(np.sum(np.square(A - B)))
+    elif kind == 'L_inf': d = np.max(np.max(np.abs(A - B)))
+    else: raise NotImplementedError(f'Invalid kind: {kind!r}')
+
+    return d
+
+
+def unnest_attr_dict(g):
+    new_g = nx.Graph()
+    for n, d in g.nodes(data=True):
+        while 'attr_dict' in d:
+            d = d['attr_dict']
+        new_g.add_node(n, **d)
+    new_g.add_edges_from(g.edges())
+    return new_g
 
 
 def get_terminal_subgraph(g):
@@ -432,10 +458,96 @@ def get_mixing_dict(g: nx.Graph, attr_name: str) -> Dict:
     Row normalized mixing dict akin to a transition matrix
     :return:
     """
-    attr_dict = nx.attribute_mixing_dict(g, attribute=attr_name, normalized=False)
-    row_norm_attr_dict = {}
-    for key1, dict1 in attr_dict.items():
-        row_norm_attr_dict[key1] = {}
-        for key2, val in dict1.items():
-            row_norm_attr_dict[key1][key2] = val / sum(dict1.values())
-    return row_norm_attr_dict
+    attr_dict = nx.attribute_mixing_dict(g, attribute=attr_name, normalized=True)
+    return attr_dict
+
+
+def numeric_ac(M):
+    # M is a numpy matrix or array
+    # numeric assortativity coefficient, pearsonr
+    if M.sum() != 1.0:
+        M = M / float(M.sum())
+    nx, ny = M.shape  # nx=ny
+    x = np.arange(nx)
+    y = np.arange(ny)
+    a = M.sum(axis=0)
+    b = M.sum(axis=1)
+    vara = (a * x ** 2).sum() - ((a * x).sum()) ** 2
+    varb = (b * x ** 2).sum() - ((b * x).sum()) ** 2
+    xy = np.outer(x, y)
+    ab = np.outer(a, b)
+    return (xy * (M - ab)).sum() / np.sqrt(vara * varb)
+
+
+def attribute_ac(M):
+    if M.sum() != 1.0:
+        M = M / M.sum()
+    s = (M @ M).sum()
+    t = M.trace()
+    r = (t - s) / (1 - s)
+    return r
+
+
+class CustomCounter(Counter):
+    def __init__(*args, **kwds):
+        if not args:
+            raise TypeError("descriptor '__init__' of 'Counter' object "
+                            "needs an argument")
+        self, *args = args
+        if len(args) > 1:
+            raise TypeError('expected at most 1 arguments, got %d' % len(args))
+        super(CustomCounter, self).__init__()
+        self.update(*args, **kwds)
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if self[key] <= 0:
+            del self[key]
+
+    def positive_values_len(self):
+        return len(tuple(self.elements()))
+
+
+def incremental_degree_assortativity(g, u, v, M_curr=None):
+    if M_curr is None: M_curr = nx.degree_mixing_matrix(g, normalized=False)
+
+    d_u, d_v = g.degree[u], g.degree[v]
+    d_max = max(g.degree[n] for n in g.nodes)
+    if d_u == d_max or d_v == d_max:
+        M = np.zeros((d_max + 2, d_max + 2))
+        M[:d_max + 1, :d_max + 1] = M_curr[:, :]
+    else:
+        M = M_curr.copy()
+
+    M[d_u + 1, d_v + 1] += 1  # adding the new edge increases degrees of u and v by 1
+    M[d_v + 1, d_u + 1] += 1
+
+    for x in g.neighbors(u):
+        multiplicity = g.number_of_edges(u, x)  # g could be a multigraph
+        d_x = g.degree[x]
+        M[d_u, d_x] -= multiplicity
+        M[d_x, d_u] -= multiplicity
+
+        if x == v: d_x += 1  # existing edge between (u, v) - increase v's degree by 1
+        M[d_u + 1, d_x] += multiplicity
+        M[d_x, d_u + 1] += multiplicity
+
+    for x in g.neighbors(v):
+        if x == u: continue  # the edge (u, v) have already been taken care of
+        multiplicity = g.number_of_edges(v, x)
+        d_x = g.degree[x]
+        M[d_v, d_x] -= multiplicity
+        M[d_x, d_v] -= multiplicity
+
+        M[d_v + 1, d_x] += multiplicity
+        M[d_x, d_v + 1] += multiplicity
+
+    return numeric_ac(M)
+
+
+def incremental_attr_assortativity(g, attr_name, mapping, attr_u, attr_v, M=None):
+    if M is None: M = nx.attribute_mixing_matrix(g, attr_name, mapping=mapping)
+    i, j = mapping[attr_u], mapping[attr_v]
+    M[i, j] += 1
+    M[j, i] += 1
+    return attribute_ac(M)

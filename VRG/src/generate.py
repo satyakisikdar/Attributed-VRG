@@ -2,6 +2,7 @@ import abc
 import logging
 import math
 import random
+from collections import Counter
 from typing import List, Dict, Tuple, Set, Union
 
 import networkx as nx
@@ -11,7 +12,8 @@ from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.NonTerminal import NonTerminal
 from VRG.src.Rule import VRGRule, NCERule
 from VRG.src.VRG import VRG, NCE
-from VRG.src.utils import find_boundary_edges, timer, get_terminal_subgraph
+from VRG.src.utils import find_boundary_edges, timer, get_terminal_subgraph, CustomCounter, \
+    incremental_degree_assortativity, incremental_attr_assortativity
 
 
 class BaseGenerator(abc.ABC):
@@ -246,6 +248,7 @@ class AttributedRandomGenerator(RandomGenerator):
 
         return chosen_nt_node, rule_candidates[rule_idx], set(), {}
 
+    # @profile
     def update_graph(self, chosen_nt_node: int, chosen_rule: VRGRule,
                      node_correspondence: Union[None, Dict] = None) -> None:
         """
@@ -262,9 +265,11 @@ class AttributedRandomGenerator(RandomGenerator):
         assert self._gen_graph.degree_(existing_node) == chosen_nt.size, 'Degree of non-terminal must match its size'
 
         broken_edges = find_boundary_edges(self._gen_graph, {existing_node})  # find the broken edges
-        assert len(broken_edges) == chosen_nt.size, f'Incorrect #broken edges: {len(broken_edges)} != {chosen_nt.size}'
+        broken_edges: Counter[tuple, int] = CustomCounter(broken_edges)  # TODO change to a Counter object to speed things up
 
-        self.total_rewirings += len(broken_edges)  # all the broken edges need to be rewired
+        assert sum(broken_edges.values()) == chosen_nt.size, f'Incorrect #broken edges: {len(broken_edges)} != {chosen_nt.size}'
+
+        self.total_rewirings += broken_edges.positive_values_len()  # all the broken edges need to be rewired
 
         node_count = max(self._gen_graph.nodes) + 1  # number of nodes in the present graph
         self._gen_graph.remove_node(existing_node)  # remove the existing node from the graph
@@ -284,48 +289,51 @@ class AttributedRandomGenerator(RandomGenerator):
         for u, v, d in chosen_rule.graph.edges(data=True):  # add edges from rule
             self._gen_graph.add_edge(node_label[u], node_label[v], **d)
 
-        if len(broken_edges) != 0:
+        if broken_edges.positive_values_len() != 0:
             if self.use_fancy_rewiring:
                 # Figure out if there are terminal nodes on both RULE and the current graph
                 rule_terminals = [node for node, d in chosen_rule.graph.nodes(data=True) if 'nt' not in d]
-                graph_terminal_list = []
-                for u, v in broken_edges:
+                graph_terminal_ctr = CustomCounter()
+                # for u, v in broken_edges:
+                for u, v in broken_edges.elements():
                     node = v if u == existing_node else u
                     if 'nt' not in self._gen_graph.nodes[node]:
-                        graph_terminal_list.append(node)
+                        graph_terminal_ctr[node] += 1  # .append(node)
 
-                if len(rule_terminals) > 0 and len(graph_terminal_list) > 0:
+                if len(rule_terminals) > 0 and len(graph_terminal_ctr) > 0:
                     # this is where the probabilistic matching needs to happen
-                    rule_terminal_list = []  # we need b_deg copies of each terminal in the rules
+                    # rule_terminal_list = []  # we need b_deg copies of each terminal in the rules
+                    rule_terminal_ctr = CustomCounter()  # we need b_deg copies of each terminal in the rules # TODO changed
                     for rule_t in rule_terminals:
                         b_deg = b_degs[rule_t]
                         if b_deg > 0:
-                            rule_terminal_list.extend([rule_t] * b_deg)
+                            rule_terminal_ctr[rule_t] = b_deg
 
-                    assert len(graph_terminal_list) >= len(graph_terminal_list)
+                    # assert graph_terminal_ctr.positive_values_len() <= rule_terminal_ctr.positive_values_len()
 
                     # do the matching up
                     while True:
-                        if len(graph_terminal_list) == 0 or len(rule_terminal_list) == 0:
+                        if graph_terminal_ctr.positive_values_len() == 0 or rule_terminal_ctr.positive_values_len() == 0:
                             break
                         # 1. pick a graph terminal at random and remove it
-                        graph_t = random.choice(graph_terminal_list)
+                        graph_t = random.choice(list(graph_terminal_ctr.keys()))
 
-                        graph_terminal_list.remove(graph_t)
+                        graph_terminal_ctr[graph_t] -= 1
                         attr_1 = self._gen_graph.nodes[graph_t][self.attr_name]
 
                         # 2. pick a rule terminal with probability proportional to the mixing matrix
                         wts = []
-                        for rule_t in rule_terminal_list:
+                        for rule_t in rule_terminal_ctr:
                             try:  # this weird reason why sometimes the node attributes are nested
                                 attr_2 = chosen_rule.graph.nodes[rule_t][self.attr_name]
                             except KeyError:
                                 attr_2 = chosen_rule.graph.nodes[rule_t]['attr_dict'][self.attr_name]
                             p = self.mixing_dict[attr_1].get(attr_2, 0)  # probability of edge  # TODO: check for bipartite graphs
-                            wts.append(p)
+                            wts.append((rule_t, p))
 
-                        rule_t = random.choices(rule_terminal_list, weights=wts, k=1)[0]
-                        rule_terminal_list.remove(rule_t)
+                        rule_t = random.choices(population=tuple(map(lambda x: x[0], wts)),
+                                                weights=tuple(map(lambda x: x[1], wts)), k=1)[0]
+                        rule_terminal_ctr[rule_t] -= 1  # .remove(rule_t)
 
                         # 3. Add the edge to gen_graph
                         logging.debug(f'Adding broken edge {(node_label[rule_t], graph_t)} the fancy way')
@@ -337,13 +345,17 @@ class AttributedRandomGenerator(RandomGenerator):
 
                         # 4. Remove the boundary edge from list of boundary edges
                         if (graph_t, existing_node) in broken_edges:
-                            broken_edges.remove((graph_t, existing_node))
+                            # broken_edges.remove((graph_t, existing_node))
+                            broken_edges[(graph_t, existing_node)] -= 1
                         else:
-                            broken_edges.remove((existing_node, graph_t))
+                            # broken_edges.remove((existing_node, graph_t))
+                            broken_edges[(existing_node, graph_t)] -= 1
 
             # continue the regular random rewiring with the remaining broken edges
+            broken_edges: list = list(broken_edges.elements())  # turn broken edges back into a list
             random.shuffle(broken_edges)  # shuffle the broken edges
             # randomly joining the new boundary edges from the RHS to the rest of the graph - uniformly at random
+
             for node, d in chosen_rule.graph.nodes(data=True):
                 num_boundary_edges = b_degs[node]
                 if num_boundary_edges == 0:  # there are no boundary edges incident to that node
@@ -371,8 +383,10 @@ class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
         self.inp_deg_ast = inp_deg_ast  # input degree assortativity
         self.inp_attr_ast = inp_attr_ast  # input attribute assortativity
         self.alpha = alpha
+        self.mapping = {val: i for i, val in enumerate(mixing_dict.keys())}  # maps attr values to numbers from 0
         return
 
+    # @profile
     def update_graph(self, chosen_nt_node: int, chosen_rule: VRGRule,
                      node_correspondence: Union[None, Dict] = None) -> None:
         """
@@ -389,9 +403,11 @@ class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
         assert self._gen_graph.degree_(existing_node) == chosen_nt.size, 'Degree of non-terminal must match its size'
 
         broken_edges = find_boundary_edges(self._gen_graph, {existing_node})  # find the broken edges
-        assert len(broken_edges) == chosen_nt.size, f'Incorrect #broken edges: {len(broken_edges)} != {chosen_nt.size}'
+        broken_edges: Counter[tuple, int] = CustomCounter(broken_edges)  # TODO change to a Counter object to speed things up
 
-        self.total_rewirings += len(broken_edges)  # all the broken edges need to be rewired
+        assert sum(broken_edges.values()) == chosen_nt.size, f'Incorrect #broken edges: {len(broken_edges)} != {chosen_nt.size}'
+
+        self.total_rewirings += broken_edges.positive_values_len()  # all the broken edges need to be rewired
 
         node_count = max(self._gen_graph.nodes) + 1  # number of nodes in the present graph
         self._gen_graph.remove_node(existing_node)  # remove the existing node from the graph
@@ -411,76 +427,90 @@ class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
         for u, v, d in chosen_rule.graph.edges(data=True):  # add edges from rule
             self._gen_graph.add_edge(node_label[u], node_label[v], **d)
 
-        if len(broken_edges) != 0:
-            # Figure out if there are terminal nodes on both RULE and the current graph
-            rule_terminals = [node for node, d in chosen_rule.graph.nodes(data=True) if 'nt' not in d]
-            graph_terminal_list = []
-            for u, v in broken_edges:
-                node = v if u == existing_node else u
-                if 'nt' not in self._gen_graph.nodes[node]:
-                    graph_terminal_list.append(node)
+        if broken_edges.positive_values_len() != 0:
+            if self.use_fancy_rewiring:
+                # Figure out if there are terminal nodes on both RULE and the current graph
+                rule_terminals = [node for node, d in chosen_rule.graph.nodes(data=True) if 'nt' not in d]
+                graph_terminal_ctr = CustomCounter()
+                # for u, v in broken_edges:
+                for u, v in broken_edges.elements():
+                    node = v if u == existing_node else u
+                    if 'nt' not in self._gen_graph.nodes[node]:
+                        graph_terminal_ctr[node] += 1  # .append(node)
 
-            if len(rule_terminals) > 0 and len(graph_terminal_list) > 0:
-                # this is where the probabilistic matching needs to happen
-                rule_terminal_list = []  # we need b_deg copies of each terminal in the rules
-                for rule_t in rule_terminals:
-                    b_deg = b_degs[rule_t]
-                    if b_deg > 0:
-                        rule_terminal_list.extend([rule_t] * b_deg)
+                if len(rule_terminals) > 0 and len(graph_terminal_ctr) > 0:
+                    # this is where the probabilistic matching needs to happen
+                    # rule_terminal_list = []  # we need b_deg copies of each terminal in the rules
+                    rule_terminal_ctr = CustomCounter()  # we need b_deg copies of each terminal in the rules # TODO changed
+                    for rule_t in rule_terminals:
+                        b_deg = b_degs[rule_t]
+                        if b_deg > 0:
+                            rule_terminal_ctr[rule_t] = b_deg
 
-                assert len(graph_terminal_list) >= len(graph_terminal_list)
+                    # assert graph_terminal_ctr.positive_values_len() <= rule_terminal_ctr.positive_values_len()
 
-                # do the matching up
-                while True:
-                    if len(graph_terminal_list) == 0 or len(rule_terminal_list) == 0:
-                        break
-                    # 1. pick a graph terminal at random and remove it
-                    graph_t = random.choice(graph_terminal_list)
+                    # do the matching up
+                    while True:
+                        if graph_terminal_ctr.positive_values_len() == 0 or rule_terminal_ctr.positive_values_len() == 0:
+                            break
+                        # 1. pick a graph terminal at random and remove it
+                        graph_t = random.choice(list(graph_terminal_ctr.keys()))
 
-                    graph_terminal_list.remove(graph_t)
+                        graph_terminal_ctr[graph_t] -= 1
 
-                    # TODO: NEW STUFF
-                    # 2. pick a rule terminal which minimizes the sum of degree and attribute assortativity difference
-                    best_rule_terminal: Tuple[int, float] = (None, np.inf)
-                    for rule_t in rule_terminal_list:
-                        self._gen_graph.add_edge(graph_t, node_label[rule_t])  # add the edge
-                        # calculate change in assortativity
-                        new_terminal_subg = get_terminal_subgraph(self._gen_graph)
+                        # 2. pick a rule terminal based on incremental assortativity
+                        best_rule_terminal = None, np.inf
+                        attr_mixing_mat = nx.attribute_mixing_matrix(self._gen_graph, attribute=self.attr_name,
+                                                                     mapping=self.mapping, normalized=False)
+                        deg_mixing_mat = nx.degree_mixing_matrix(self._gen_graph, normalized=False)
 
-                        new_deg_asst = nx.degree_assortativity_coefficient(new_terminal_subg)
-                        new_attr_asst = nx.attribute_assortativity_coefficient(new_terminal_subg, self.attr_name)
+                        for rule_t in rule_terminal_ctr:
+                            # calculate degree and attribute ast after edge (graph_t, node_label[rule_t])
+                            u, v = graph_t, node_label[rule_t]
+                            attr_u, attr_v = self._gen_graph.nodes[u][self.attr_name], self._gen_graph.nodes[v][self.attr_name]
 
-                        cost = self.alpha * math.fabs(self.inp_deg_ast - new_deg_asst)
-                        if not np.isnan(new_attr_asst):  # attribute assortativity is nan when all nodes have the same attribute
-                            cost += (1 - self.alpha) * math.fabs(self.inp_attr_ast - new_attr_asst)
+                            new_deg_ast = incremental_degree_assortativity(g=self._gen_graph, u=u, v=v, M_curr=deg_mixing_mat)
+                            new_attr_ast = incremental_attr_assortativity(g=self._gen_graph, attr_name=self.attr_name,
+                                                                          attr_u=attr_u, attr_v=attr_v, mapping=self.mapping,
+                                                                          M=attr_mixing_mat)
 
-                        logging.debug(f'Rule_t: {rule_t}, cost: {cost!r}, prev best: {best_rule_terminal!r}')
+                            deg_ast_diff = np.abs(self.inp_deg_ast - new_deg_ast)
+                            attr_ast_diff = np.abs(self.inp_attr_ast - new_attr_ast)
 
-                        if cost < best_rule_terminal[1]:
-                            best_rule_terminal = rule_t, cost
-                        self._gen_graph.remove_edge(graph_t, node_label[rule_t])  # remove the edge
+                            cost = -1 if np.isnan(deg_ast_diff) else self.alpha * deg_ast_diff
 
-                    assert best_rule_terminal[0] is not None
-                    rule_t = best_rule_terminal[0]
-                    rule_terminal_list.remove(rule_t)
+                            if not np.isnan(attr_ast_diff):
+                                cost += (1 - self.alpha) * attr_ast_diff
 
-                    # 3. Add the edge to gen_graph
-                    logging.debug(f'Adding broken edge {(node_label[rule_t], graph_t)} the fancy way')
-                    self._gen_graph.add_edge(graph_t, node_label[rule_t])  # node_label stores the actual label in gen_graph
-                    self.fancy_rewirings += 1  # fancy rewiring
+                            if cost < best_rule_terminal[1]:
+                                best_rule_terminal = rule_t, cost
 
-                    # 3. update b_deg for the rule terminal
-                    b_degs[rule_t] -= 1
+                        rule_t = best_rule_terminal[0]
+                        assert rule_t is not None
+                        rule_terminal_ctr[rule_t] -= 1  # .remove(rule_t)
+                        logging.debug(f'Best rule terminal {node_label[rule_t]} cost = {best_rule_terminal[1]}')
 
-                    # 4. Remove the boundary edge from list of boundary edges
-                    if (graph_t, existing_node) in broken_edges:
-                        broken_edges.remove((graph_t, existing_node))
-                    else:
-                        broken_edges.remove((existing_node, graph_t))
+                        # 3. Add the edge to gen_graph
+                        logging.debug(f'Adding broken edge {(node_label[rule_t], graph_t)} the fancy way')
+                        self._gen_graph.add_edge(graph_t, node_label[rule_t])  # node_label stores the actual label in gen_graph
+                        self.fancy_rewirings += 1  # fancy rewiring
+
+                        # 3. update b_deg for the rule terminal
+                        b_degs[rule_t] -= 1
+
+                        # 4. Remove the boundary edge from list of boundary edges
+                        if (graph_t, existing_node) in broken_edges:
+                            # broken_edges.remove((graph_t, existing_node))
+                            broken_edges[(graph_t, existing_node)] -= 1
+                        else:
+                            # broken_edges.remove((existing_node, graph_t))
+                            broken_edges[(existing_node, graph_t)] -= 1
 
             # continue the regular random rewiring with the remaining broken edges
+            broken_edges: list = list(broken_edges.elements())  # turn broken edges back into a list
             random.shuffle(broken_edges)  # shuffle the broken edges
             # randomly joining the new boundary edges from the RHS to the rest of the graph - uniformly at random
+
             for node, d in chosen_rule.graph.nodes(data=True):
                 num_boundary_edges = b_degs[node]
                 if num_boundary_edges == 0:  # there are no boundary edges incident to that node
@@ -762,3 +792,47 @@ def get_node_correspondence(rule: VRGRule, nodes: Set[int]) -> Dict:
                 if label in nodes:
                     node_correspondence[node] = label
     return node_correspondence
+
+
+"""
+                    for rule_t in rule_terminal_list:
+                        self._gen_graph.add_edge(graph_t, node_label[rule_t])  # add the edge
+                        # calculate change in assortativity
+                        new_terminal_subg = get_terminal_subgraph(self._gen_graph)
+
+                        new_deg_asst = nx.degree_assortativity_coefficient(new_terminal_subg)
+                        new_attr_asst = nx.attribute_assortativity_coefficient(new_terminal_subg, self.attr_name)
+
+                        cost = self.alpha * math.fabs(self.inp_deg_ast - new_deg_asst)
+                        if not np.isnan(new_attr_asst):  # attribute assortativity is nan when all nodes have the same attribute
+                            cost += (1 - self.alpha) * math.fabs(self.inp_attr_ast - new_attr_asst)
+
+                        logging.debug(f'Rule_t: {rule_t}, cost: {cost!r}, prev best: {best_rule_terminal!r}')
+
+                        if cost < best_rule_terminal[1]:
+                            best_rule_terminal = rule_t, cost
+                        self._gen_graph.remove_edge(graph_t, node_label[rule_t])  # remove the edge
+"""
+
+""" for loop in greedy 
+                            self._gen_graph.add_edge(graph_t, node_label[rule_t])  # add the edge
+                            # calculate change in assortativity
+                            new_terminal_subg = get_terminal_subgraph(self._gen_graph)
+
+                            new_deg_asst = nx.degree_assortativity_coefficient(new_terminal_subg)  # this is nan if all nodes have the same degree
+                            new_attr_asst = nx.attribute_assortativity_coefficient(new_terminal_subg, self.attr_name)
+
+                            if np.isnan(new_deg_asst):
+                                cost = -1000 * self.alpha
+                            else:
+                                cost = self.alpha * math.fabs(self.inp_deg_ast - new_deg_asst)
+                            if not np.isnan(new_attr_asst):  # attribute asst is nan when all nodes have the same attribute
+                                cost += (1 - self.alpha) * math.fabs(self.inp_attr_ast - new_attr_asst)
+
+                            logging.debug(f'Rule_t: {rule_t}, cost: {cost!r}, prev best: {best_rule_terminal!r}')
+
+                            if cost < best_rule_terminal[1]:
+                                best_rule_terminal = rule_t, cost
+                            self._gen_graph.remove_edge(graph_t, node_label[rule_t])  # remove the edge
+
+"""

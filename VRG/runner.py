@@ -11,6 +11,8 @@ import networkx as nx
 import seaborn as sns
 from tqdm import tqdm
 
+sys.path.extend(['../', '../../', './', '../../../', '/home/ssikdar/tmp_dir'])
+
 import VRG.src.partitions as partitions
 from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.MDL import graph_dl
@@ -19,13 +21,12 @@ from VRG.src.VRG import VRG, NCE, AttributedVRG
 from VRG.src.consensus_clustering import get_consensus_root
 from VRG.src.extract import NCEExtractor, VRGExtractor, AVRGExtractor
 from VRG.src.generate import RandomGenerator, NCEGenerator, AttributedRandomGenerator, GreedyAttributeRandomGenerator
-from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer, nx_to_lmg, get_mixing_dict
+from VRG.src.utils import dump_pickle, check_file_exists, load_pickle, timer, nx_to_lmg, get_mixing_dict, CustomCounter
 
 sys.setrecursionlimit(1_000_000)
 # logging.basicConfig(level=logging.DEBUG, format="%(message)s")
 logging.basicConfig(level=logging.ERROR, format="%(message)s")
 logging.getLogger('matplotlib.font_manager').disabled = True
-sys.path.extend(['../', '../../', './', '../../../', '/home/ssikdar/tmp_dir'])
 sns.set_style('white')
 
 
@@ -60,7 +61,7 @@ def get_graph(gname: str = 'sample') -> Tuple[nx.Graph, str]:
     else:
         if gname in ('waterloo', 'grenoble', 'uppsala'):
             g = nx.read_gpickle(f'../snap_data/cleaned/{gname}_lcc_attr.gpickle')
-        elif gname in ('polblogs', 'polbooks', 'football', 'bipartite-10-10'):
+        elif gname in ('polblogs', 'polbooks', 'football', 'bipartite-10-10', 'cora', 'citeseer', 'pubmed', 'us-flights'):
             g = nx.read_gml(f'./input/{gname}.gml')
             attr_name = 'value'
         else:
@@ -83,7 +84,7 @@ def get_graph(gname: str = 'sample') -> Tuple[nx.Graph, str]:
 
 
 @timer
-def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool) -> Any:
+def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool, filename='') -> Any:
     """
     wrapper method for getting dendrogram. uses an existing pickle if it can.
     :param g: graph
@@ -105,9 +106,11 @@ def get_clustering(g: nx.Graph, outdir: str, clustering: str, use_pickle: bool) 
         ]
         return list_of_list_clusters
 
-    list_of_list_filename = os.path.join(outdir, f'{clustering}_list.pkl')
-
-    make_dirs(outdir='/data/ssikdar/attributed-vrg/dumps/', name=g.name)
+    if filename == '':
+        list_of_list_filename = os.path.join(outdir, f'{clustering}_list.pkl')
+        make_dirs(outdir='/data/ssikdar/attributed-vrg/dumps/', name=g.name)
+    else:
+        list_of_list_filename = filename
 
     if check_file_exists(list_of_list_filename) and use_pickle:
         logging.error(f'Using existing pickle for {clustering!r} clustering\n')
@@ -162,7 +165,8 @@ def make_dirs(outdir: str, name: str) -> None:
 
 
 def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: int, input_graph: nx.Graph,
-                 use_grammar_pickle: bool, use_cluster_pickle: bool, attr_name: str, outdir: str = 'dumps', count: int = 1) -> List[Union[VRG, NCE]]:
+                 use_grammar_pickle: bool, use_cluster_pickle: bool, attr_name: str, outdir: str = 'dumps', count: int = 1,
+                 grammar_filename: str = '') -> List[Union[VRG, NCE]]:
     """
     Dump the stats
     :return:
@@ -175,7 +179,8 @@ def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: 
     grammars = []
 
     for i in range(count):
-        grammar_filename = f'{outdir}/grammars/{name}/{grammar_type[0]}-{grammar_type[1].replace("_", "-")}_{clustering}_{mu}_{i}.pkl'
+        if grammar_filename == '':
+            grammar_filename = f'{outdir}/grammars/{name}/{grammar_type[0]}-{grammar_type[1].replace("_", "-")}_{clustering}_{mu}_{i}.pkl'
         logging.error(f'Extracting grammar: {grammar_filename}')
         if use_grammar_pickle and check_file_exists(grammar_filename):
             logging.error(f'Using pickled grammar from {grammar_filename!r}')
@@ -208,12 +213,13 @@ def get_grammars(name: str, clustering: str, grammar_type: Tuple[str, str], mu: 
 def generate_graphs(name: str, grammar: Union[VRG, NCE, AttributedVRG], num_graphs: int, grammar_type: str, outdir: str = 'dumps',
                     mixing_dict: Union[None, Dict] = None, attr_name: Union[str, None] = None, fancy=None,
                     inp_deg_ast: float = None, inp_attr_ast: float = None, use_pickle: bool = False,
-                    save_snapshots: bool = False, alpha: Union[None, float] = None) -> List[nx.Graph]:
+                    save_snapshots: bool = False, alpha: Union[None, float] = None, graphs_filename='') -> List[nx.Graph]:
 
     make_dirs(outdir=outdir, name=name)
-    if fancy and grammar_type == 'AVRG': grammar_type += '-fancy'
-    if alpha is not None: grammar_type += f'-{int(alpha * 100)}'
-    graphs_filename = f'{outdir}/graphs/{name}/{grammar_type}_{grammar.clustering}_{grammar.mu}_{num_graphs}.pkl'
+    # if fancy and grammar_type == 'AVRG': grammar_type += '-fancy'
+    # if alpha is not None: grammar_type += f'-{int(alpha * 100)}'
+    if graphs_filename == '':
+        graphs_filename = f'{outdir}/graphs/{name}/{grammar_type}_{grammar.clustering}_{grammar.mu}_{num_graphs}.pkl'
     gen_filename = f'{outdir}/generators/{name}/{grammar_type}_{grammar.clustering}_{grammar.mu}_{num_graphs}.pkl'
 
     if use_pickle and check_file_exists(graphs_filename):
@@ -228,7 +234,7 @@ def generate_graphs(name: str, grammar: Union[VRG, NCE, AttributedVRG], num_grap
         assert attr_name != '' and fancy is not None
         if 'greedy' in grammar_type:
             assert inp_attr_ast is not None and inp_deg_ast is not None
-            assert alpha is not None
+            if alpha is None: alpha = 0.5
             gen = GreedyAttributeRandomGenerator(grammar=grammar, mixing_dict=mixing_dict, attr_name=attr_name,
                                                  inp_attr_ast=inp_attr_ast, inp_deg_ast=inp_deg_ast,
                                                  save_snapshots=save_snapshots, alpha=alpha)
@@ -244,7 +250,7 @@ def generate_graphs(name: str, grammar: Union[VRG, NCE, AttributedVRG], num_grap
 
     graphs = gen.generate(num_graphs=num_graphs)
     dump_pickle(graphs, graphs_filename)
-    dump_pickle(gen, gen_filename)
+    if save_snapshots: dump_pickle(gen, gen_filename)
 
     return graphs
 
@@ -271,13 +277,17 @@ def parse_args():
 
 
 if __name__ == '__main__':
+    # g = nx.read_gml('/data/ssikdar/attributed-vrg/us-airports.gml')
+    g = nx.read_graphml('/data/ssikdar/attributed-vrg/us-airports.graphml')
+
+    exit(1)
     args = parse_args()
 
     name, attr_name, use_cluster_pickle, \
         use_grammar_pickle, clustering, grammar_type, mu, n = args.graph, args.attr_name, args.cluster_pickle,\
                                                               args.grammar_pickle, args.clustering, args.type, args.mu, args.n
     print('Command line args:', args)
-    name = 'karate'
+    name = 'polbooks'
     # name = 'karate'; attr_name = 'club'
     mu = 5; grammar_type = ('AVRG', 'all_tnodes')
     use_grammar_pickle = True; use_cluster_pickle = True; n = 10
@@ -295,10 +305,12 @@ if __name__ == '__main__':
                        use_grammar_pickle=use_grammar_pickle, use_cluster_pickle=use_cluster_pickle, attr_name=attr_name)[0]
 
     print(vrg)
+
     inp_deg_ast = nx.degree_assortativity_coefficient(g)
     inp_attr_ast = nx.attribute_assortativity_coefficient(g, attr_name)
-    grammar_type = 'AVRG'
+    grammar_type = 'AVRG-greedy'
+    alpha = 0.5
     graphs = generate_graphs(name=name, grammar=vrg, num_graphs=10, mixing_dict=mix_dict, attr_name=attr_name,
                              grammar_type=grammar_type, inp_deg_ast=inp_deg_ast, inp_attr_ast=inp_attr_ast, fancy=False,
-                             save_snapshots=True)
+                             save_snapshots=False, alpha=alpha)
     print(graphs)
