@@ -137,6 +137,16 @@ class GraphStats:
         plt.legend(loc='best')
         return ax
 
+    def degree_mixing_matrix(self, normalized: bool = True) -> np.array:
+        mat = nx.degree_mixing_matrix(self.graph, normalized=normalized)
+        self.stats['degree_mixing_mat'] = mat
+        return mat
+
+    def attr_mixing_matrix(self, attr_name: str = 'value', mapping: dict = None, normalized: bool = True) -> np.array:
+        mat = nx.attribute_mixing_matrix(self.graph, attribute=attr_name, mapping=mapping, normalized=normalized)
+        self.stats['attr_mixing_mat'] = mat
+        return mat
+
     def _calculate_robustness_measures(self) -> None:
         """
         Calls the Leiden comms and frac of nodes in giant component methods
