@@ -15,6 +15,7 @@ from scipy.spatial import distance
 from VRG.src.GCD import GCD
 from VRG.src.graph_stats import GraphStats
 # from src.portrait.portrait_divergence import portrait_divergence
+from VRG.src.utils import matrix_distance
 
 
 class GraphPairCompare:
@@ -58,6 +59,28 @@ class GraphPairCompare:
             for key in self.stats:
                 self.stats[key] = float('inf')  # set the distances to infinity
         return
+
+    def deg_mixing_dist_dict(self) -> Dict[str, float]:
+        mat1, mat2 = self.gstats1['degree_mixing_mat'], self.gstats2['degree_mixing_mat']
+        dist_dict = {}
+        for kind in 'L1', 'L2', 'L_inf':
+            dist = matrix_distance(mat1, mat2, kind)
+            dist_dict[kind] = dist
+            self.stats[f'deg_mixing_{kind}'] = dist
+        return dist_dict
+
+    def attr_mixing_dist_dict(self) -> Dict[str, float]:
+        kinds = 'L1', 'L2', 'L_inf'
+        dist_dict = {kind: np.nan for kind in kinds}
+
+        if len(nx.get_node_attributes(self.graph1, 'value')) > 0 and \
+                len(nx.get_node_attributes(self.graph2, 'value')) > 0:
+            mat1, mat2 = self.gstats1['attr_mixing_mat'], self.gstats2['attr_mixing_mat']
+            for kind in kinds:
+                dist = matrix_distance(mat1, mat2, kind)
+                dist_dict[kind] = dist
+                self.stats[f'attr_mixing_{kind}'] = dist
+        return dist_dict
 
     def pgd_spearman(self) -> float:
         raise NotImplementedError()

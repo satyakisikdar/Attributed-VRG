@@ -5,7 +5,7 @@ import networkx as nx
 import VRG.src.MDL as MDL
 from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.NonTerminal import NonTerminal
-from VRG.src.utils import load_pickle, edge_matcher
+from VRG.src.utils import load_pickle, edge_matcher, unnest_attr_dict
 
 
 class BaseRule:
@@ -190,7 +190,11 @@ class AVRGRule(BaseRule):
 
         g1 = nx.convert_node_labels_to_integers(self.graph)
         g2 = nx.convert_node_labels_to_integers(other.graph)
-        isomorphic = isomorphic and nx.is_isomorphic(g1, g2, node_match=iso.categorical_node_match(self.attr_name, ''),
+
+        g1 = unnest_attr_dict(g1)  # this is fixed
+        g2 = unnest_attr_dict(g2)
+        isomorphic = isomorphic and nx.is_isomorphic(g1, g2,
+                                                     node_match=iso.categorical_node_match(self.attr_name, ''),
                                                      edge_match=edge_matcher)  # use the node and edge matcher
 
         return isomorphic
