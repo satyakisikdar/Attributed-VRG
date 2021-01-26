@@ -13,23 +13,19 @@ import igraph as ig
 import networkx as nx
 import scipy.sparse.linalg
 import sklearn.preprocessing
+from anytree import LevelOrderIter
 from sklearn.cluster import KMeans
 
 from VRG.src.LightMultiGraph import LightMultiGraph
+from VRG.src.Tree import get_leaves
 from VRG.src.utils import nx_to_igraph
 
 
 # LightMultiGraph = nx.Graph
 
 def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], method: str = 'leiden'):
-    is_weighted = False
-    if isinstance(g, nx.Graph) or isinstance(g, nx.DiGraph):  # turn it into an igraph Graph
-        if len(nx.get_edge_attributes(g, name='wt')) == 0:
-            is_weighted = False
-        g = nx_to_igraph(g)
-
-    weights = 'weight' if is_weighted else None
-    return _get_list_of_lists(ig_g=g, method=method, weights=weights)
+    ig_g = ig.Graph.from_networkx(g)
+    return _get_list_of_lists(ig_g=ig_g, method=method, weights=None)
 
 
 def _get_list_of_lists(ig_g, method='leiden', weights=None):
@@ -43,17 +39,14 @@ def _get_list_of_lists(ig_g, method='leiden', weights=None):
         clusters = ig_g.community_label_propagation(weights=weights)
     elif method == 'infomap':
         clusters = ig_g.community_infomap(edge_weights=weights)
-    elif method == 'leading_eigenvector':
+    elif method == 'leading_eig':
         clusters = ig_g.community_leading_eigenvector(weights=weights)
     else:
         raise NotImplementedError(f'Improper method: {method!r}')
 
     if len(clusters) == 1:
         sg = clusters.subgraphs()[0]
-        if sg.vcount() == 1:
-            comms = [int(n['name']) for n in sg.vs()]
-        else:
-            comms = [[int(n['name'])] for n in sg.vs()]
+        comms = [[int(n['_nx_name'])] for n in sg.vs()]
         return comms
 
     for sg in clusters.subgraphs():

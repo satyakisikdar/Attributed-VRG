@@ -21,7 +21,7 @@ from matplotlib import gridspec
 from numpy import linalg as la
 from scipy import sparse as sps
 from scipy.sparse import issparse
-
+import statsmodels.stats.api as sm
 from VRG.src.LightMultiGraph import LightMultiGraph
 
 sns.set(); sns.set_style("darkgrid")
@@ -171,13 +171,24 @@ def get_nodes_covered(sg: LightMultiGraph) -> Set[int]:
 
 
 def load_pickle(fname):
-    return pickle.load(open(fname, 'rb'))
+    try:
+        obj = pickle.load(open(fname, 'rb'))
+    except Exception as e:
+        obj = None
+        logging.error(f'{e} Error loading pickle from {fname!r}')
+    return obj
 
 
 def dump_pickle(obj, fname):
     logging.error(f'Dumping pickle at {fname!r}')
     pickle.dump(obj, open(fname, 'wb'))
     return
+
+
+def mean_confidence_interval(arr, alpha=0.05) -> Tuple:
+    if len(arr) == 1:
+        return 0, 0
+    return sm.DescrStatsW(arr).tconfint_mean(alpha=alpha)
 
 
 def node_matcher_b_deg(node_attr_1: Dict, node_attr_2: Dict) -> bool:
@@ -391,6 +402,28 @@ def check_isomorphism(ref_g: nx.Graph, graphs: List[nx.Graph]) -> bool:
     return all(nx.is_isomorphic(ref_g, g) for g in graphs)
 
 
+def get_graph_from_prob_matrix(p_mat: np.array, thresh: float = None) -> nx.Graph:
+    """
+    Generates a NetworkX graph from probability matrix
+    :param p_mat: matrix of edge probabilities
+    :return:
+    """
+    n = p_mat.shape[0]  # number of rows / nodes
+
+    if thresh is not None:
+        rand_mat = np.ones((n, n)) * thresh
+    else:
+        rand_mat = np.random.rand(n, n)
+
+    sampled_mat = rand_mat <= p_mat
+    # sampled_mat = sampled_mat * sampled_mat.T  # to make sure it is symmetric
+
+    sampled_mat = sampled_mat.astype(int)
+    np.fill_diagonal(sampled_mat, 0)  # zero out the diagonals
+    g = nx.from_numpy_array(sampled_mat, create_using=nx.Graph())
+    return g
+
+
 def nx_to_igraph(nx_g: Union[nx.Graph, nx.DiGraph]) -> ig.Graph:
     """
     Convert networkx graph to an equivalent igraph Graph
@@ -542,12 +575,12 @@ def incremental_degree_assortativity(g, u, v, M_curr=None):
         M[d_v + 1, d_x] += multiplicity
         M[d_x, d_v + 1] += multiplicity
 
-    return numeric_ac(M)
+    return numeric_ac(M), M
 
 
 def incremental_attr_assortativity(g, attr_name, mapping, attr_u, attr_v, M=None):
-    if M is None: M = nx.attribute_mixing_matrix(g, attr_name, mapping=mapping)
+    if M is None: M = nx.attribute_mixing_matrix(g, attr_name, mapping=mapping, normalized=False)
     i, j = mapping[attr_u], mapping[attr_v]
     M[i, j] += 1
     M[j, i] += 1
-    return attribute_ac(M)
+    return attribute_ac(M), M

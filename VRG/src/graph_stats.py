@@ -15,7 +15,6 @@ import networkx as nx
 # import NetLSD.netlsd as net
 import numpy as np
 import seaborn as sns
-import leidenalg as la
 import igraph as ig
 
 # from src.utils import check_file_exists, ColorPrint as CP, dump_pickle
@@ -57,10 +56,11 @@ class GraphStats:
     """
     GraphStats has methods for finding different statistics for a NetworkX graph
     """
-    __slots__ = ['graph', 'stats']
+    __slots__ = ['graph', 'ig_graph', 'stats']
 
     def __init__(self, graph: nx.Graph):
         self.graph: nx.Graph = graph
+        self.ig_graph: ig.Graph = None
         self.stats: Dict[str, Any] = {'name': graph.name, 'n': graph.order(), 'm': graph.size()}
 
     def __str__(self) -> str:
@@ -137,14 +137,41 @@ class GraphStats:
         plt.legend(loc='best')
         return ax
 
+    def shortest_path_ast(self, alpha: float) -> float:
+        if self.ig_graph is None:
+            self.ig_graph = ig.Graph.from_networkx(self.graph)
+        n = self.ig_graph.vcount()
+
+        d = np.array(self.ig_graph.degree()).reshape(n, 1)
+
+        H = np.array(self.ig_graph.shortest_paths())
+        H_alpha = np.float_power(H, -alpha)
+        np.fill_diagonal(H_alpha, 0)
+
+        h = H_alpha.sum()
+        E = H_alpha / h
+
+        q = E.sum(axis=1).reshape(n, 1)
+        D_q = np.diag(q.flatten())
+        qq_t = np.multiply(q, q.T)
+
+        X = E - qq_t
+        Y = D_q - qq_t
+
+        num = np.matmul(np.matmul(d.T, X), d)
+        denom = np.matmul(np.matmul(d.T, Y), d)
+        shortest_path_ast = (num / denom).item()
+        self.stats[f'shortest_path_ast_{alpha}'] = shortest_path_ast
+        return shortest_path_ast
+
     def degree_mixing_matrix(self, normalized: bool = True) -> np.array:
         mat = nx.degree_mixing_matrix(self.graph, normalized=normalized)
-        self.stats['degree_mixing_mat'] = mat
+        self.stats['degree_mixing_matrix'] = mat
         return mat
 
     def attr_mixing_matrix(self, attr_name: str = 'value', mapping: dict = None, normalized: bool = True) -> np.array:
         mat = nx.attribute_mixing_matrix(self.graph, attribute=attr_name, mapping=mapping, normalized=normalized)
-        self.stats['attr_mixing_mat'] = mat
+        self.stats['attr_mixing_matrix'] = mat
         return mat
 
     def _calculate_robustness_measures(self) -> None:
@@ -163,14 +190,9 @@ class GraphStats:
         """
         Use Leiden alg to find (a) the number of communities and (b) modularity
         """
-        nx_g = nx.convert_node_labels_to_integers(self.graph, label_attribute='old_label')
-        old_label = nx.get_node_attributes(nx_g, 'old_label')
-
-        ig_g = ig.Graph(directed=False)
-        ig_g.add_vertices(nx_g.order())
-        ig_g.add_edges(nx_g.edges())
-
-        partition = la.find_partition(ig_g, partition_type=la.ModularityVertexPartition)
+        if self.ig_graph is None:
+            self.ig_graph = ig.Graph.from_networkx(self.graph)
+        partition = self.ig_graph.community_leiden(n_iterations=-1, objective_function='modularity')
         self.stats['num_clusters'] = len(partition)
         self.stats['modularity'] = partition.modularity
         return len(partition), partition.modularity
@@ -196,15 +218,28 @@ class GraphStats:
 
         return adj_eigenvalues
 
-    def assortativity(self) -> float:
+    def attribute_assortativity(self, attr_name='value') -> float:
         """
-        Returns the assortativity of the network
+        returns the attribute assortativity
+        :param attr_name:
         :return:
         """
+        attr_ast = nx.attribute_assortativity_coefficient(self.graph, attribute=attr_name)
+        self.stats['attribute_assortativity'] = attr_ast
+        return attr_ast
+
+    def degree_assortativity(self) -> float:
+        """
+        Returns the degree assortativity of the network
+        :return:
+        """
+        if self.ig_graph is None:
+            self.ig_graph = ig.Graph.from_networkx(self.graph)
         CP.print_none('Calculating Degree Assortativity')
 
-        assortativity = nx.degree_assortativity_coefficient(self.graph)
-        self.stats['assortativity'] = assortativity
+        assortativity = self.ig_graph.assortativity_degree(directed=False)
+        # assortativity = nx.degree_assortativity_coefficient(self.graph)
+        self.stats['degree_assortativity'] = assortativity
 
         return assortativity
 
@@ -306,7 +341,7 @@ class GraphStats:
     def diameter(self) -> float:
         CP.print_none('Calculating Diameter')
 
-        diam = nx.diameter(self.graph)
+        diam = self.ig_graph.diameter(directed=False)
         self.stats['diameter'] = diam
 
         return diam
@@ -385,7 +420,9 @@ class GraphStats:
         PageRank centrality
         """
         CP.print_none('Calculating PageRank')
-
+        # if self.ig_graph is None:
+        #     self.ig_graph = ig.Graph.from_networkx(self.graph)
+        # pagerank = self.ig_graph.pagerank(directed=False)
         pagerank = nx.pagerank_scipy(self.graph)
         self.stats['pagerank'] = pagerank
 

@@ -4,6 +4,7 @@ Graph Comparison Functions
 from math import fabs
 from typing import Dict, List
 
+import igraph as ig
 import networkx as nx
 import numpy as np
 import scipy.stats
@@ -22,7 +23,7 @@ class GraphPairCompare:
     """
     Compares two graphs
     """
-    __slots__ = ['gstats1', 'gstats2', 'graph1', 'graph2', 'stats']
+    __slots__ = ['gstats1', 'gstats2', 'graph1', 'igraph1', 'igraph2', 'graph2', 'stats']
 
     def __init__(self, gstats1: GraphStats, gstats2: GraphStats) -> None:
         self.gstats1: GraphStats = gstats1
@@ -30,6 +31,10 @@ class GraphPairCompare:
         # todo: these objects probably need to be removed if we are not storing the graphs to disk in the stats object
         self.graph1: nx.Graph = gstats1.graph
         self.graph2: nx.Graph = gstats2.graph
+
+        # self.igraph1: ig.Graph = gstats1.ig_graph
+        # self.igraph2: ig.Graph = gstats2.ig_graph
+
         self.stats: Dict[str, float] = {}
         # self.calculate()
         return
@@ -61,12 +66,12 @@ class GraphPairCompare:
         return
 
     def deg_mixing_dist_dict(self) -> Dict[str, float]:
-        mat1, mat2 = self.gstats1['degree_mixing_mat'], self.gstats2['degree_mixing_mat']
+        mat1, mat2 = self.gstats1['degree_mixing_matrix'], self.gstats2['degree_mixing_matrix']
         dist_dict = {}
         for kind in 'L1', 'L2', 'L_inf':
             dist = matrix_distance(mat1, mat2, kind)
             dist_dict[kind] = dist
-            self.stats[f'deg_mixing_{kind}'] = dist
+        self.stats['deg_mixing_dist_dict'] = dist
         return dist_dict
 
     def attr_mixing_dist_dict(self) -> Dict[str, float]:
@@ -75,11 +80,11 @@ class GraphPairCompare:
 
         if len(nx.get_node_attributes(self.graph1, 'value')) > 0 and \
                 len(nx.get_node_attributes(self.graph2, 'value')) > 0:
-            mat1, mat2 = self.gstats1['attr_mixing_mat'], self.gstats2['attr_mixing_mat']
+            mat1, mat2 = self.gstats1['attr_mixing_matrix'], self.gstats2['attr_mixing_matrix']
             for kind in kinds:
                 dist = matrix_distance(mat1, mat2, kind)
                 dist_dict[kind] = dist
-                self.stats[f'attr_mixing_{kind}'] = dist
+            self.stats['attr_mixing_dist_dict'] = dist_dict
         return dist_dict
 
     def pgd_spearman(self) -> float:
@@ -139,6 +144,10 @@ class GraphPairCompare:
         """
         g1_dist = list(self.gstats1['pagerank'].values())
         g2_dist = list(self.gstats2['pagerank'].values())
+
+        # TODO double check pagerank
+        # g1_dist = list(self.gstats1['pagerank'])
+        # g2_dist = list(self.gstats2['pagerank'])
 
         hist_upperbound = max(max(g1_dist), max(g2_dist))
 

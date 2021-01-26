@@ -21,7 +21,7 @@ class BaseExtractor(abc.ABC):
     """
     New base extractor class with Anytree class
     """
-    ALLOWED_TYPES = ('mu_random', 'all_tnodes')
+    ALLOWED_TYPES = ('mu_random', 'mu_level', 'all_tnodes')
 
     def __init__(self, g: LightMultiGraph, type: str, root: TreeNode, mu: int, clustering: str):
         assert type in BaseExtractor.ALLOWED_TYPES, f'Invalid mode: {type}'
@@ -43,20 +43,15 @@ class BaseExtractor(abc.ABC):
         """
         Extract the lowest scoring tnode from the tree
         """
-        best_tnode = self.root
-        best_score = self.root.score
+        best_tnode = self.root, self.root.score
+
         for tnode in self.root.descendants:
             if tnode.is_leaf:
                 continue
-            if tnode.score == 0:
-                best_tnode = tnode
-                best_score = tnode.score
-                break
-            if tnode.score < best_score:
-                best_score = tnode.score
-                best_tnode = tnode
+            if tnode.score < best_tnode[1]:
+                best_tnode = tnode, tnode.score
 
-        return best_tnode
+        return best_tnode[0]
 
     @abc.abstractmethod
     def extract_rule(self, tnode: TreeNode) -> Tuple[Set, VRGRule, List]:
@@ -71,14 +66,13 @@ class BaseExtractor(abc.ABC):
         score = None
         diff = self.mu - len(tnode.leaves)
 
-        if diff < 0:  # there are more nodes than mu
-            mu_score = np.inf
-        elif diff >= 0:
-            mu_score = diff  # mu is greater
+        mu_score = diff if diff >= 0 else np.inf  # mu is greater
+        if tnode.is_leaf: mu_score = np.inf  # if it's a leaf -- skip over!!
 
-        sg = self.g.subgraph(get_leaves(tnode)).copy()
-        if (sg.size() == 0):  # or (not nx.is_connected(sg)):  # check for connectivity here
-            mu_score = np.inf
+        if not np.isinf(mu_score):
+            sg = self.g.subgraph(get_leaves(tnode)).copy()
+            if sg.size() == 0:  # or (not nx.is_connected(sg)):  # check for connectivity here
+                mu_score = np.inf
 
         if self.type == 'mu_random':
             score = mu_score  # |mu - nleaf|
@@ -120,9 +114,11 @@ class BaseExtractor(abc.ABC):
         while tnode is not None:  # we might not have to go up all the way - stop when the score of a node is still infinity
             old_score = tnode.score
             self.set_tnode_score(tnode=tnode)
-            if np.isinf(tnode.score):  # dont bother any more TODO: check if this works when score is a tuple
+
+            score = tnode.score[0] if isinstance(tnode.score, tuple) else tnode.score
+            if np.isinf(score):  # dont bother any more TODO: check if this works when score is a tuple
                 break
-            assert not np.isinf(tnode.score)
+            assert not np.isinf(score)
             if self.type != 'all_tnodes':
                 assert tnode.score != old_score, 'Score was not set properly'  # all the ancestor's scores have to change
             tnode = tnode.parent
@@ -205,14 +201,11 @@ class VRGExtractor(BaseExtractor):
         score = None
         diff = self.mu - len(tnode.leaves)
 
-        if diff < 0:  # there are more nodes than mu
-            mu_score = np.inf
-        elif diff >= 0:
-            mu_score = diff  # mu is greater
-
-        sg = self.g.subgraph(get_leaves(tnode)).copy()
-        if sg.size() == 0:  # or (not nx.is_connected(sg)):  # check for connectivity here
-            mu_score = np.inf
+        mu_score = diff if diff >= 0 else np.inf  # mu is greater
+        if not np.isinf(mu_score):
+            sg = self.g.subgraph(get_leaves(tnode)).copy()
+            if sg.size() == 0:  # or (not nx.is_connected(sg)):  # check for connectivity here
+                mu_score = np.inf
 
         if self.type == 'mu_random':
             score = mu_score  # |mu - nleaf|

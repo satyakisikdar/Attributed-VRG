@@ -1,10 +1,11 @@
+import logging
 from typing import List, Set, Union
 
 import networkx as nx
 import numpy as np
 from anytree import Node, RenderTree, LevelOrderIter
 from joblib import Parallel, delayed
-
+from copy import deepcopy
 
 # from VRG.src.utils import timer
 
@@ -28,6 +29,61 @@ class TreeNode(Node):
         else:
             parent = self.parent.name
         return f'{self.name} ({len(self.leaves)}) p: {parent} score: {self.score}'
+
+
+def draw_tree(root: TreeNode):
+    for pre, _, node in RenderTree(root):
+        print(f'{pre}{node.name}')
+    return
+
+
+def tree_okay(root: TreeNode, g: nx.Graph):
+    """
+    All the leaves for each internal node must be connected
+    """
+    faulty_tnodes = 0
+    for tnode in LevelOrderIter(root, filter_=lambda x: not x.is_leaf):
+        leaf_sg = g.subgraph(get_leaves(tnode))
+        if not nx.is_connected(leaf_sg):
+            # print(f'Disconnected subgraph n = {leaf_sg.order():,d}, {leaf_sg.size():,d}')
+            faulty_tnodes += 1
+
+    # if faulty_tnodes > 0: logging.error(f'{faulty_tnodes:,d} faulty tree nodes found!!')
+    return faulty_tnodes
+
+
+def readjust_tree(root: TreeNode, input_graph: nx.Graph) -> TreeNode:
+    new_root = deepcopy(root)
+    second_lowest_tnodes = set(tnode.parent for tnode in new_root.leaves)
+
+    # TODO: untested!!! buggy
+
+    # find out the offending tnodes
+    not_ok_tnodes: Set[TreeNode] = set()
+    for tnode in second_lowest_tnodes:
+        leaves = get_leaves(tnode)
+        subg = input_graph.subgraph(leaves)
+        is_ok = subg.order() > 0 and nx.is_connected(subg)
+        if not is_ok:
+            not_ok_tnodes.add(tnode)
+
+    # combine all the leaves of each offending tnode siblings together
+    for offennding_tnode in not_ok_tnodes:
+        parent = offennding_tnode.parent
+        if parent is None:  # we have processed this tnode already
+            continue
+
+        parent.children = tuple()
+
+        combined_leaves = get_leaves(offennding_tnode)
+        for sib in offennding_tnode.siblings:
+            combined_leaves |= get_leaves(sib)
+
+        for new_leaf in combined_leaves:
+            TreeNode(name=new_leaf, score=None, parent=parent)
+
+    return new_root
+
 
 
 class TreeNodeOld:

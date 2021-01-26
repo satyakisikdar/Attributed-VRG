@@ -115,36 +115,38 @@ class VRG(BaseVRG):
         self.rule_list.append(rule)
         self.rule_dict[rule.lhs_nt.size].append(rule)
 
-        # update the unique rules
-        rule_copy = VRGRule(lhs_nt=rule.lhs_nt, graph=rule.graph, level=rule.level, frequency=1)
-
-        if rule_copy.lhs_nt.size not in self.unique_rule_dict:
-            self.unique_rule_dict[rule_copy.lhs_nt.size] = []
-        isomorphic_rule_found = False
-        for old_rule in self.unique_rule_dict[rule_copy.lhs_nt.size]:
-            # if nx.is_isomorphic(old_rule.graph, rule_copy.graph):
-            if nx.is_isomorphic(old_rule.graph, rule_copy.graph, node_match=node_matcher_strict,
-                                edge_match=edge_matcher):
-                isomorphic_rule_found = True
-                logging.debug('Isomorphic rule found!')
-                old_rule.frequency += 1
-
-        if not isomorphic_rule_found:  # it is a new rule
-            self.unique_rule_list.append(rule_copy)
-            self.unique_rule_dict[rule_copy.lhs_nt.size].append(rule_copy)
-
-        isomorphic_rhs_found = False
-        for i in range(len(self.unique_rule_rhs)):
-            old_rule_rhs = self.unique_rule_rhs[i][0]
-            if nx.is_isomorphic(old_rule_rhs, rule_copy.graph):
-                # if nx.is_isomorphic(old_rule_rhs, rule_copy.graph, node_match=node_matcher, edge_match=edge_matcher):
-                self.unique_rule_rhs[i][1] += 1  # ugly hack to update the frequencies in place
-                isomorphic_rhs_found = True
-
-        if not isomorphic_rhs_found:
-            self.unique_rule_rhs.append([rule_copy.graph, 1])
-
         return rule.id
+        #
+        # # update the unique rules
+        # rule_copy = VRGRule(lhs_nt=rule.lhs_nt, graph=rule.graph, level=rule.level, frequency=1)
+        #
+        # if rule_copy.lhs_nt.size not in self.unique_rule_dict:
+        #     self.unique_rule_dict[rule_copy.lhs_nt.size] = []
+        # isomorphic_rule_found = False
+        # for old_rule in self.unique_rule_dict[rule_copy.lhs_nt.size]:
+        #     # if nx.is_isomorphic(old_rule.graph, rule_copy.graph):
+        #     if nx.is_isomorphic(old_rule.graph, rule_copy.graph, node_match=node_matcher_strict,
+        #                         edge_match=edge_matcher):
+        #         isomorphic_rule_found = True
+        #         logging.debug('Isomorphic rule found!')
+        #         old_rule.frequency += 1
+        #
+        # if not isomorphic_rule_found:  # it is a new rule
+        #     self.unique_rule_list.append(rule_copy)
+        #     self.unique_rule_dict[rule_copy.lhs_nt.size].append(rule_copy)
+        #
+        #
+        # isomorphic_rhs_found = False
+        # for i in range(len(self.unique_rule_rhs)):
+        #     old_rule_rhs = self.unique_rule_rhs[i][0]
+        #     if nx.is_isomorphic(old_rule_rhs, rule_copy.graph):
+        #         # if nx.is_isomorphic(old_rule_rhs, rule_copy.graph, node_match=node_matcher, edge_match=edge_matcher):
+        #         self.unique_rule_rhs[i][1] += 1  # ugly hack to update the frequencies in place
+        #         isomorphic_rhs_found = True
+        #
+        # if not isomorphic_rhs_found:
+        #     self.unique_rule_rhs.append([rule_copy.graph, 1])
+        # return rule.id
 
     def copy(self):
         vrg_copy = VRG(type=self.type, clustering=self.clustering, name=self.name, mu=self.mu)

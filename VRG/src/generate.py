@@ -3,7 +3,7 @@ import logging
 import math
 import random
 from collections import Counter
-from typing import List, Dict, Tuple, Set, Union
+from typing import List, Dict, Tuple, Set, Union, Any
 
 import networkx as nx
 import numpy as np
@@ -133,7 +133,6 @@ class BaseGenerator(abc.ABC):
             self.generated_graphs.append(g)
             self.all_gen_snapshots.append(snapshot)
 
-
         return self.generated_graphs
 
     @abc.abstractmethod
@@ -221,8 +220,8 @@ class AttributedRandomGenerator(RandomGenerator):
             fancy_frac = 0
         else:
             fancy_frac = 100 * self.fancy_rewirings/self.total_rewirings
-        logging.error(f'Generated graph: n={self._gen_graph.order():_d} m={self._gen_graph.size():_d} fancy rewirings'
-                      f'({self.fancy_rewirings:_d}/{self.total_rewirings:_d}) {round(fancy_frac, 3)}%')
+        logging.error(f'Generated graph: n={self._gen_graph.order():,d} m={self._gen_graph.size():,d} fancy rewirings'
+                      f'({self.fancy_rewirings:,d}/{self.total_rewirings:,d}) {round(fancy_frac, 3)}%')
 
         self._gen_graph.graph['total_rewirings'] = self.total_rewirings
         self._gen_graph.graph['fancy_rewirings'] = self.fancy_rewirings
@@ -460,19 +459,23 @@ class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
 
                         # 2. pick a rule terminal based on incremental assortativity
                         best_rule_terminal = None, np.inf
+
+                        # we actually dont need to calculate assortativity mixing mat from scratch here
+                        # TODO
                         attr_mixing_mat = nx.attribute_mixing_matrix(self._gen_graph, attribute=self.attr_name,
                                                                      mapping=self.mapping, normalized=False)
                         deg_mixing_mat = nx.degree_mixing_matrix(self._gen_graph, normalized=False)
+                        ######
 
                         for rule_t in rule_terminal_ctr:
                             # calculate degree and attribute ast after edge (graph_t, node_label[rule_t])
                             u, v = graph_t, node_label[rule_t]
                             attr_u, attr_v = self._gen_graph.nodes[u][self.attr_name], self._gen_graph.nodes[v][self.attr_name]
 
-                            new_deg_ast = incremental_degree_assortativity(g=self._gen_graph, u=u, v=v, M_curr=deg_mixing_mat)
-                            new_attr_ast = incremental_attr_assortativity(g=self._gen_graph, attr_name=self.attr_name,
-                                                                          attr_u=attr_u, attr_v=attr_v, mapping=self.mapping,
-                                                                          M=attr_mixing_mat)
+                            new_deg_ast, new_deg_mixing_mat = incremental_degree_assortativity(g=self._gen_graph, u=u, v=v, M_curr=deg_mixing_mat)
+                            new_attr_ast, new_attr_mixing_mat = incremental_attr_assortativity(g=self._gen_graph, attr_name=self.attr_name,
+                                                                                               attr_u=attr_u, attr_v=attr_v, mapping=self.mapping,
+                                                                                               M=attr_mixing_mat)
 
                             deg_ast_diff = np.abs(self.inp_deg_ast - new_deg_ast)
                             attr_ast_diff = np.abs(self.inp_attr_ast - new_attr_ast)
@@ -484,6 +487,8 @@ class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
 
                             if cost < best_rule_terminal[1]:
                                 best_rule_terminal = rule_t, cost
+                                best_deg_mixing_mat = new_deg_mixing_mat
+                                best_attr_mixing_mat = new_attr_mixing_mat
 
                         rule_t = best_rule_terminal[0]
                         assert rule_t is not None
@@ -493,6 +498,13 @@ class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
                         # 3. Add the edge to gen_graph
                         logging.debug(f'Adding broken edge {(node_label[rule_t], graph_t)} the fancy way')
                         self._gen_graph.add_edge(graph_t, node_label[rule_t])  # node_label stores the actual label in gen_graph
+
+                        # update the mixing matrices
+                        # deg_mixing_mat = best_deg_mixing_mat.copy()
+                        # attr_mixing_mat = best_attr_mixing_mat.copy()
+
+                        # assert np.allclose(nx.degree_mixing_matrix(self._gen_graph, normalized=False), deg_mixing_mat)
+
                         self.fancy_rewirings += 1  # fancy rewiring
 
                         # 3. update b_deg for the rule terminal
@@ -537,7 +549,7 @@ class GreedyGenerator(BaseGenerator):
     """
     def __init__(self, grammar: NCE, input_graph: Union[LightMultiGraph, nx.Graph], fraction: Union[None, float] = None,
                  keep_nodes: Union[Set, None] = None, save_snapshots: bool = False):
-        assert isinstance(grammar, NCE), 'Incorrect variant of grammar. Needs NCE'
+        # assert isinstance(grammar, NCE), 'Incorrect variant of grammar. Needs NCE'
         super().__init__(grammar, strategy='greedy', save_snapshots=save_snapshots)
         self.input_graph: Union[nx.Graph, LightMultiGraph] = input_graph
 
@@ -680,14 +692,13 @@ class EnsureAllNodesGenerator(GreedyGenerator):
     """
     Use the select rule policy from NCE generator but keep the rewiring random
     """
-    def select_rule(self) -> Tuple[int, NCERule, Set]:
+    def select_rule(self) -> Tuple[int, NCERule, Set, Any]:
         """
         Pick rules that prioritizes the missing nodes - pick the ones with the most overlap
         :return:
         """
         chosen_nt_node = max(self.current_non_terminal_nodes,
-                             key=lambda nt_node: self._gen_graph.nodes[nt_node][
-                                 'nt'].id)  # choose the non-terminal with max id
+                             key=lambda nt_node: self._gen_graph.nodes[nt_node]['nt'].id)  # choose the nt with max id
         logging.debug(f'Picking nt: {chosen_nt_node}')
         chosen_nt: NonTerminal = self._gen_graph.nodes[chosen_nt_node]['nt']
         rule_idx = chosen_nt.id - 1
@@ -695,7 +706,43 @@ class EnsureAllNodesGenerator(GreedyGenerator):
         chosen_rule = self.grammar.rule_list[rule_idx]
         assert chosen_rule.lhs_nt.size == chosen_nt.size, 'Non-terminal size mismatch'
 
-        return chosen_nt_node, chosen_rule, chosen_rule.nodes_covered
+        return chosen_nt_node, chosen_rule, chosen_rule.nodes_covered, None
+
+
+class AttributedEnsureAllNodesGenerator(AttributedRandomGenerator):
+    def select_rule(self) -> Tuple[int, VRGRule, Set[int], Any]:
+        """
+        Pick rules that prioritizes the missing nodes - pick the ones with the most overlap
+        :return:
+        """
+        chosen_nt_node = max(self.current_non_terminal_nodes,
+                             key=lambda nt_node: self._gen_graph.nodes[nt_node]['nt'].id)  # choose the nt with max id
+        logging.debug(f'Picking nt: {chosen_nt_node}')
+        chosen_nt: NonTerminal = self._gen_graph.nodes[chosen_nt_node]['nt']
+        rule_idx = chosen_nt.id - 1
+
+        chosen_rule = self.grammar.rule_list[rule_idx]
+        assert chosen_rule.lhs_nt.size == chosen_nt.size, 'Non-terminal size mismatch'
+
+        return chosen_nt_node, chosen_rule, chosen_rule.nodes_covered, None
+
+
+class GreedyAttributedEnsureAllNodesGenerator(GreedyAttributeRandomGenerator):
+    def select_rule(self) -> Tuple[int, VRGRule, Set[int]]:
+        """
+        Pick rules that prioritizes the missing nodes - pick the ones with the most overlap
+        :return:
+        """
+        chosen_nt_node = max(self.current_non_terminal_nodes,
+                             key=lambda nt_node: self._gen_graph.nodes[nt_node]['nt'].id)  # choose the nt with max id
+        logging.debug(f'Picking nt: {chosen_nt_node}')
+        chosen_nt: NonTerminal = self._gen_graph.nodes[chosen_nt_node]['nt']
+        rule_idx = chosen_nt.id - 1
+
+        chosen_rule = self.grammar.rule_list[rule_idx]
+        assert chosen_rule.lhs_nt.size == chosen_nt.size, 'Non-terminal size mismatch'
+
+        return chosen_nt_node, chosen_rule, chosen_rule.nodes_covered, None
 
 
 class NCEGenerator(BaseGenerator):
@@ -792,47 +839,3 @@ def get_node_correspondence(rule: VRGRule, nodes: Set[int]) -> Dict:
                 if label in nodes:
                     node_correspondence[node] = label
     return node_correspondence
-
-
-"""
-                    for rule_t in rule_terminal_list:
-                        self._gen_graph.add_edge(graph_t, node_label[rule_t])  # add the edge
-                        # calculate change in assortativity
-                        new_terminal_subg = get_terminal_subgraph(self._gen_graph)
-
-                        new_deg_asst = nx.degree_assortativity_coefficient(new_terminal_subg)
-                        new_attr_asst = nx.attribute_assortativity_coefficient(new_terminal_subg, self.attr_name)
-
-                        cost = self.alpha * math.fabs(self.inp_deg_ast - new_deg_asst)
-                        if not np.isnan(new_attr_asst):  # attribute assortativity is nan when all nodes have the same attribute
-                            cost += (1 - self.alpha) * math.fabs(self.inp_attr_ast - new_attr_asst)
-
-                        logging.debug(f'Rule_t: {rule_t}, cost: {cost!r}, prev best: {best_rule_terminal!r}')
-
-                        if cost < best_rule_terminal[1]:
-                            best_rule_terminal = rule_t, cost
-                        self._gen_graph.remove_edge(graph_t, node_label[rule_t])  # remove the edge
-"""
-
-""" for loop in greedy 
-                            self._gen_graph.add_edge(graph_t, node_label[rule_t])  # add the edge
-                            # calculate change in assortativity
-                            new_terminal_subg = get_terminal_subgraph(self._gen_graph)
-
-                            new_deg_asst = nx.degree_assortativity_coefficient(new_terminal_subg)  # this is nan if all nodes have the same degree
-                            new_attr_asst = nx.attribute_assortativity_coefficient(new_terminal_subg, self.attr_name)
-
-                            if np.isnan(new_deg_asst):
-                                cost = -1000 * self.alpha
-                            else:
-                                cost = self.alpha * math.fabs(self.inp_deg_ast - new_deg_asst)
-                            if not np.isnan(new_attr_asst):  # attribute asst is nan when all nodes have the same attribute
-                                cost += (1 - self.alpha) * math.fabs(self.inp_attr_ast - new_attr_asst)
-
-                            logging.debug(f'Rule_t: {rule_t}, cost: {cost!r}, prev best: {best_rule_terminal!r}')
-
-                            if cost < best_rule_terminal[1]:
-                                best_rule_terminal = rule_t, cost
-                            self._gen_graph.remove_edge(graph_t, node_label[rule_t])  # remove the edge
-
-"""
