@@ -85,7 +85,6 @@ def readjust_tree(root: TreeNode, input_graph: nx.Graph) -> TreeNode:
     return new_root
 
 
-
 class TreeNodeOld:
     """
     Node class for trees
@@ -152,6 +151,7 @@ class TreeNodeOld:
 
     def get_num_leaves(self) -> int:
         return len(self.leaves)
+
 
 name = 'a'  # needs to be global to make sure the nodes are named appropriately
 def create_tree(lst: List) -> TreeNode:
