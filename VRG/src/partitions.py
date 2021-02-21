@@ -5,23 +5,16 @@ Contains the different partition methods
 3. Leiden and Louvain methods
 """
 import logging
-import math
 import random
 from typing import Union
 
 import igraph as ig
+import math
 import networkx as nx
 import scipy.sparse.linalg
 import sklearn.preprocessing
-from anytree import LevelOrderIter
 from sklearn.cluster import KMeans
 
-from VRG.src.LightMultiGraph import LightMultiGraph
-from VRG.src.Tree import get_leaves
-from VRG.src.utils import nx_to_igraph
-
-
-# LightMultiGraph = nx.Graph
 
 def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], method: str = 'leiden'):
     ig_g = ig.Graph.from_networkx(g)
@@ -58,7 +51,7 @@ def _get_list_of_lists(ig_g, method='leiden', weights=None):
     return tree
 
 
-def get_random_partition(g: LightMultiGraph, seed=None):
+def get_random_partition(g: nx.Graph, seed=None):
     nodes = list(g.nodes())
     if seed is not None:
         random.seed(seed)
@@ -156,7 +149,7 @@ def approx_min_conductance_partitioning(g: nx.Graph):
     return lvl
 
 
-def spectral_kmeans(g: LightMultiGraph, K: int):
+def spectral_kmeans(g: nx.Graph, K: int):
     """
     k-way ncut spectral clustering Ng et al. 2002 KNSC1
     :param g: graph g
@@ -165,7 +158,7 @@ def spectral_kmeans(g: LightMultiGraph, K: int):
     """
     tree = []
 
-    if g.order() <= K:   # not more than k nodes, return the list of nodes
+    if g.order() <= K:  # not more than k nodes, return the list of nodes
         if g.order() == 1:
             clusters = list(g.nodes())
         else:
