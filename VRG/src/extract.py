@@ -14,6 +14,7 @@ from VRG.src.NonTerminal import NonTerminal
 from VRG.src.Rule import VRGRule, NCERule, AVRGRule
 from VRG.src.Tree import TreeNode, get_leaves
 from VRG.src.VRG import VRG, NCE, AttributedVRG
+from VRG.src.program_args import GrammarArgs
 from VRG.src.utils import find_boundary_edges, set_boundary_degrees, timer
 
 
@@ -21,20 +22,21 @@ class BaseExtractor(abc.ABC):
     """
     New base extractor class with Anytree class
     """
-    ALLOWED_TYPES = ('mu_random', 'mu_level', 'all_tnodes')
+    ALLOWED_TYPES = ('mu-random', 'mu-level', 'all-tnodes')
 
-    def __init__(self, g: LightMultiGraph, type: str, root: TreeNode, mu: int, clustering: str):
-        assert type in BaseExtractor.ALLOWED_TYPES, f'Invalid mode: {type}'
-        self.g: LightMultiGraph = g
-        self.type: str = type
-        self.root: TreeNode = root
+    def __init__(self, grammar_args: GrammarArgs):
+        assert grammar_args.extract_type in BaseExtractor.ALLOWED_TYPES, f'Invalid mode: {grammar_args.extract_type}'
+        self.g: LightMultiGraph = grammar_args.lmg
+        self.extract_type: str = grammar_args.extract_type
+        self.root: TreeNode = grammar_args.hc_obj.root
+        self.mu: int = grammar_args.mu
+        self.clustering = grammar_args.clustering
+        self.name = grammar_args.name
         self.grammar = None
-        self.mu: int = mu
-        self.clustering = clustering
         return
 
     def __str__(self) -> str:
-        return f'type: {self.type}, mu: {self.mu} #rules: {len(self.grammar.rule_list)}'
+        return f'name: {self.name!r}, extract: {self.extract_type!r}, mu: {self.mu} #rules: {len(self.grammar.rule_list)}'
 
     def __repr__(self) -> str:
         return str(self)
@@ -74,11 +76,11 @@ class BaseExtractor(abc.ABC):
             if sg.size() == 0:  # or (not nx.is_connected(sg)):  # check for connectivity here
                 mu_score = np.inf
 
-        if self.type == 'mu_random':
+        if self.extract_type == 'mu-random':
             score = mu_score  # |mu - nleaf|
-        elif self.type == 'mu_level':
+        elif self.extract_type == 'mu-level':
             score = mu_score, tnode.depth  # |mu - nleaf|, depth of the tnode
-        elif 'dl' in self.type:  # compute cost only if description length is used for scores
+        elif 'dl' in self.extract_type:  # compute cost only if description length is used for scores
             raise NotImplementedError('DL related methods are not implemented yet')
 
         assert score is not None, 'score is None'
@@ -119,7 +121,7 @@ class BaseExtractor(abc.ABC):
             if np.isinf(score):  # dont bother any more TODO: check if this works when score is a tuple
                 break
             assert not np.isinf(score)
-            if self.type != 'all_tnodes':
+            if self.extract_type != 'all-tnodes':
                 assert tnode.score != old_score, 'Score was not set properly'  # all the ancestor's scores have to change
             tnode = tnode.parent
         return
@@ -168,7 +170,7 @@ class BaseExtractor(abc.ABC):
         """
         num_nodes = self.g.order()
         tqdm.write(
-            f'Extracting grammar name:{self.grammar.name} mu:{self.grammar.mu} type:{self.grammar.type} clustering:{self.grammar.clustering}')
+            f'Extracting grammar name:{self.grammar.name} mu:{self.grammar.mu} type:{self.grammar.extract_type} clustering:{self.grammar.clustering}')
 
         self.update_subtree_scores(self.root)  # initialize the subtree scores
         with tqdm(total=100, bar_format='{l_bar}{bar}|[{elapsed}<{remaining}]', ncols=50) as pbar:
@@ -192,9 +194,9 @@ class BaseExtractor(abc.ABC):
 
 
 class VRGExtractor(BaseExtractor):
-    def __init__(self, g: LightMultiGraph, type: str, root: TreeNode, mu: int, clustering: str):
-        super().__init__(g=g, type=type, root=root, mu=mu, clustering=clustering)
-        self.grammar = VRG(clustering=clustering, mu=mu, type=type, name=g.name)
+    def __init__(self, grammar_args: GrammarArgs):
+        super().__init__(grammar_args=grammar_args)
+        self.grammar = VRG(grammar_args=grammar_args)
         return
 
     def set_tnode_score(self, tnode: TreeNode) -> None:
@@ -207,14 +209,14 @@ class VRGExtractor(BaseExtractor):
             if sg.size() == 0:  # or (not nx.is_connected(sg)):  # check for connectivity here
                 mu_score = np.inf
 
-        if self.type == 'mu_random':
+        if self.extract_type == 'mu-random':
             score = mu_score  # |mu - nleaf|
-        elif self.type == 'all_tnodes':
+        elif self.extract_type == 'all-tnodes':
             diff = tnode.height - 1
             score = diff if diff >= 0 else np.inf
-        elif self.type == 'mu_level':
+        elif self.extract_type == 'mu-level':
             score = mu_score, tnode.depth  # |mu - nleaf|, depth of the tnode
-        elif 'dl' in self.type:  # compute cost only if description length is used for scores
+        elif 'dl' in self.extract_type:  # compute cost only if description length is used for scores
             raise NotImplementedError('DL related methods are not implemented yet')
 
         assert score is not None, 'score is None'
@@ -246,10 +248,10 @@ class VRGExtractor(BaseExtractor):
 
 
 class AVRGExtractor(VRGExtractor):
-    def __init__(self, g: LightMultiGraph, type: str, root: TreeNode, mu: int, clustering: str, attr_name: str):
-        super().__init__(g=g, type=type, root=root, mu=mu, clustering=clustering)
-        self.attr_name = attr_name
-        self.grammar = AttributedVRG(clustering=clustering, mu=mu, name=g.name, attr_name=attr_name)
+    def __init__(self, grammar_args: GrammarArgs):
+        super().__init__(grammar_args=grammar_args)
+        self.attr_name = grammar_args.program_args.attr_name
+        self.grammar = AttributedVRG(grammar_args=grammar_args)
         return
 
     def extract_rule(self, tnode: TreeNode) -> Tuple[Set, AVRGRule, List]:
@@ -277,9 +279,10 @@ class AVRGExtractor(VRGExtractor):
 
 
 class NCEExtractor(BaseExtractor):
+    pass
     def __init__(self, g: LightMultiGraph, type: str, root: TreeNode, mu: int, clustering: str):
         super().__init__(g=g, type=type, root=root, mu=mu, clustering=clustering)
-        self.grammar = NCE(type='mu_random', clustering=clustering, mu=mu, name=g.name)
+        self.grammar = NCE(type='mu-random', clustering=clustering, mu=mu, name=g.name)
         return
 
     def extract_rule(self, tnode: TreeNode) -> Tuple[Set, NCERule, List]:
