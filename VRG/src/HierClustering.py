@@ -16,6 +16,7 @@ from anytree import LevelOrderIter
 from VRG.src.Tree import TreeNode, create_tree, dasgupta_cost
 from VRG.src.partitions import louvain_leiden_infomap_label_prop, get_random_partition, \
     spectral_kmeans, approx_min_conductance_partitioning
+from VRG.src.program_args import ProgramArgs
 from VRG.src.utils import load_pickle, dump_pickle
 
 
@@ -24,25 +25,28 @@ class HierarchicalClustering:
     """
     Base class for hierarchical clustering algorithms
     """
+    prog_args: ProgramArgs
     input_graph: nx.Graph
-    name: str
-    clustering: str
-    basedir: str
     root: Union[TreeNode, None] = None
     root_pickle_filename: str = ''
 
     def __post_init__(self):
+        self.name = self.prog_args.name
+        self.clustering = self.prog_args.clustering
+        self.use_cluster_pickle = self.prog_args.use_cluster_pickle
+
         if self.root_pickle_filename == '':
-            self.root_pickle_filename = join(self.basedir, 'output', 'trees', self.name, f'{self.clustering}_root.pkl')
-        self.stats = dict(name=self.name, clustering=self.clustering)
+            self.root_pickle_filename = join(self.prog_args.basedir, 'output', 'trees', self.name,
+                                             f'{self.clustering}_root.pkl')
+        self.stats = dict(name=self.prog_args.name, clustering=self.prog_args.clustering)
         return
 
-    def get_clustering(self, use_pickle: bool = False):
+    def get_clustering(self):
         """
         runs the clustering algorithm and returns the root of the TreeNode
         :return:
         """
-        if use_pickle and Path(self.root_pickle_filename).exists():
+        if self.prog_args.use_cluster_pickle and Path(self.root_pickle_filename).exists():
             pickled_root = load_pickle(self.root_pickle_filename)
             if pickled_root is None:
                 logging.error(f'Error in pickle! {self.name!r} {self.clustering!r}')
