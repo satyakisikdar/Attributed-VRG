@@ -3,8 +3,9 @@ Program Args that get tossed around in functions
 """
 from dataclasses import dataclass
 from os.path import join
-from typing import Any
+from typing import Any, Union
 
+from VRG.src.VRG import AttributedVRG
 from VRG.src.utils import nx_to_lmg
 
 
@@ -21,6 +22,7 @@ class ProgramArgs:
 
     write_grammar: bool = True  # write grammar to disk
     write_graphs: bool = True  # write graphs to disk
+    write_snapshots: bool = False  # write graph snapshots
 
 
 @dataclass
@@ -48,14 +50,25 @@ class GrammarArgs:
 @dataclass
 class GenerationArgs:
     grammar_args: GrammarArgs
+    grammar: AttributedVRG
     gen_type: str  # generation type: regular, fancy, greedy-deg, greedy-attr, greedy-50
     num_graphs: int = 10  # number of graphs to generate
-    graphs_info: str = ''
-    graphs_filename: str = ''
+    inp_degree_ast: Union[None, float] = None
+    inp_attr_ast: Union[None, float] = None
+    inp_mixing_dict: Union[None, dict] = None
+    alpha: Union[None, float] = None
 
     def __post_init__(self):
         self.program_args = self.grammar_args.program_args
+        self.input_graph = self.grammar_args.input_graph
+        self.name = self.program_args.name
+        self.clustering = self.program_args.clustering
+        self.use_fancy_rewiring = False if 'random' in self.gen_type else True
+
         self.graphs_info = f'{self.gen_type}_{self.num_graphs}'
-        self.graphs_filename = join(self.program_args.basedir, 'output/graphs', self.program_args.name,
+        self.graphs_filename = join(self.program_args.basedir, 'output/graphs', self.name,
                                     f'{self.grammar_args.grammar_info}_{self.graphs_info}.pkl')
+
+        self.snapshots_filename = join(self.program_args.basedir, 'output/snapshots', self.name,
+                                       f'{self.grammar_args.grammar_info}_{self.graphs_info}.pkl')
         return
