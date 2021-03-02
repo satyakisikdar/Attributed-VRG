@@ -1,18 +1,19 @@
 import abc
 import logging
-import math
 import random
 from collections import Counter
 from typing import List, Dict, Tuple, Set, Union, Any
 
 import networkx as nx
 import numpy as np
+from tqdm import tqdm
 
 from VRG.src.LightMultiGraph import LightMultiGraph
 from VRG.src.NonTerminal import NonTerminal
 from VRG.src.Rule import VRGRule, NCERule
 from VRG.src.VRG import VRG, NCE
-from VRG.src.utils import find_boundary_edges, timer, get_terminal_subgraph, CustomCounter, \
+from VRG.src.program_args import GenerationArgs
+from VRG.src.utils import find_boundary_edges, timer, CustomCounter, \
     incremental_degree_assortativity, incremental_attr_assortativity
 
 
@@ -20,20 +21,25 @@ class BaseGenerator(abc.ABC):
     """
     Base class for generating graphs from a RandomVRG
     """
-    __slots__ = 'grammar', 'strategy', '_gen_graph', 'current_non_terminal_nodes', 'rule_ordering',\
+    __slots__ = 'grammar', 'gen_type', '_gen_graph', 'current_non_terminal_nodes', 'rule_ordering', \
                 'generated_graphs', 'save_snapshots'
-    allowed_strategies = 'random', 'greedy'
+    allowed_strategies = 'random', 'greedy-deg', 'greedy-attr', 'greedy-50', 'mix'
 
-    def __init__(self, grammar: Union[VRG, NCE], strategy: str, save_snapshots: bool) -> None:
-        assert strategy in BaseGenerator.allowed_strategies, f'Invalid strategy {strategy}, ' \
-                                                             f'choose from {BaseGenerator.allowed_strategies}'
-        self.grammar: Union[VRG, NCE] = grammar  # RandomVRG object
-        self.strategy: str = strategy  # strategy for generation
+    def __init__(self, gen_args: GenerationArgs) -> None:
+        assert gen_args.gen_type in BaseGenerator.allowed_strategies, f'Invalid strategy {gen_args.gen_type}, ' \
+                                                                      f'choose from {BaseGenerator.allowed_strategies}'
+        self.gen_args = gen_args
+        self.name = gen_args.name
+        self.clustering = gen_args.clustering
+        self.extract_type = gen_args.grammar_args.extract_type
+        self.grammar: Union[VRG, NCE] = gen_args.grammar  # RandomVRG object
+        self.gen_type: str = gen_args.gen_type  # strategy for generation
+        self.save_snapshots = gen_args.program_args.write_snapshots
+
         self.current_non_terminal_nodes: Set[int] = set()  # set of non-terminal nodes in the current graph
         self.generated_graphs: List[nx.Graph] = []  # list of generated graphs
         self._gen_graph: Union[None, LightMultiGraph] = None  # generated graph
         self.rule_ordering: List[int] = []  # sequence of rule ids used to generate the graph
-        self.save_snapshots = save_snapshots
         self.gen_snapshots: List[LightMultiGraph] = []  # stores the individual stages for one generation
         self.all_gen_snapshots: List[List[LightMultiGraph]] = []  # stores the snapshots for all  different generations
         return
@@ -128,7 +134,15 @@ class BaseGenerator(abc.ABC):
         self.generated_graphs: List[nx.Graph] = []
         # with Parallel(n_jobs=5, backend='multiprocessing') as parallel:
         #     things = parallel(delayed(self._generate)(i) for i in range(num_graphs))
-        things = [self._generate(i) for i in range(num_graphs)]
+        # tqdm.write(f'Generating {num_graphs} graphs for')
+
+        with tqdm(total=num_graphs, ncols=150) as pbar:
+            things = []
+            for i in range(num_graphs):
+                things.append(self._generate(i))
+                pbar.set_description(f'{self.name!r} {self.clustering!r} {self.extract_type!r} {self.gen_type!r}')
+                pbar.update(1)
+
         for g, snapshot in things:
             self.generated_graphs.append(g)
             self.all_gen_snapshots.append(snapshot)
@@ -144,8 +158,9 @@ class BaseGenerator(abc.ABC):
 
 
 class RandomGenerator(BaseGenerator):
-    def __init__(self, grammar: VRG, save_snapshots: bool = False) -> None:
-        super().__init__(grammar=grammar, strategy='random', save_snapshots=save_snapshots)
+    def __init__(self, gen_args: GenerationArgs) -> None:
+        super().__init__(gen_args=gen_args)
+        return
 
     def select_rule(self) -> Tuple[int, VRGRule, Set[int], Dict]:
         """
@@ -180,7 +195,8 @@ class RandomGenerator(BaseGenerator):
             chosen_nt_node, chosen_rule, _, _ = self.select_rule()  # throw out the set of covered nodes and node correspondence
             self.current_non_terminal_nodes.remove(chosen_nt_node)  # remove the non-terminal from the set
             self.update_graph(chosen_rule=chosen_rule, chosen_nt_node=chosen_nt_node)
-            if self.save_snapshots: self.gen_snapshots.append(self._gen_graph.copy())  # add the current graph after update
+            if self.save_snapshots:
+                self.gen_snapshots.append(self._gen_graph.copy())  # add the current graph after update
 
         logging.debug(f'Generated graph: n={self._gen_graph.order():_d} m={self._gen_graph.size():_d}')
         return self._gen_graph
@@ -190,14 +206,15 @@ class AttributedRandomGenerator(RandomGenerator):
     """
     Attributed graphs generated Random style
     """
-    def __init__(self, grammar: VRG, mixing_dict: Dict, attr_name: str, use_fancy_rewiring: bool,
-                 save_snapshots: bool = False):
-        super().__init__(grammar, save_snapshots=save_snapshots)
-        self.mixing_dict = mixing_dict
-        self.attr_name = attr_name
+
+    def __init__(self, gen_args: GenerationArgs):
+        super().__init__(gen_args=gen_args)
+        self.mixing_dict = gen_args.inp_mixing_dict
+        self.attr_name = gen_args.program_args.attr_name
         self.fancy_rewirings = 0
         self.total_rewirings = 0
-        self.use_fancy_rewiring = use_fancy_rewiring
+        self.use_fancy_rewiring = gen_args.use_fancy_rewiring
+        self.save_snapshots = gen_args.program_args.write_snapshots
         return
 
     def _gen(self) -> LightMultiGraph:
@@ -220,7 +237,7 @@ class AttributedRandomGenerator(RandomGenerator):
             fancy_frac = 0
         else:
             fancy_frac = 100 * self.fancy_rewirings/self.total_rewirings
-        logging.error(f'Generated graph: n={self._gen_graph.order():,d} m={self._gen_graph.size():,d} fancy rewirings'
+        logging.debug(f'Generated graph: n={self._gen_graph.order():,d} m={self._gen_graph.size():,d} fancy rewirings'
                       f'({self.fancy_rewirings:,d}/{self.total_rewirings:,d}) {round(fancy_frac, 3)}%')
 
         self._gen_graph.graph['total_rewirings'] = self.total_rewirings
@@ -376,13 +393,13 @@ class AttributedRandomGenerator(RandomGenerator):
 
 
 class GreedyAttributeRandomGenerator(AttributedRandomGenerator):
-    def __init__(self, grammar: VRG, mixing_dict: Dict, attr_name: str, inp_deg_ast: float, inp_attr_ast: float,
-                 save_snapshots: bool = False, alpha: float = 0.5):
-        super().__init__(grammar, mixing_dict, attr_name, use_fancy_rewiring=True, save_snapshots=save_snapshots)
-        self.inp_deg_ast = inp_deg_ast  # input degree assortativity
-        self.inp_attr_ast = inp_attr_ast  # input attribute assortativity
-        self.alpha = alpha
-        self.mapping = {val: i for i, val in enumerate(mixing_dict.keys())}  # maps attr values to numbers from 0
+    def __init__(self, gen_args: GenerationArgs):
+        super().__init__(gen_args=gen_args)
+        self.inp_deg_ast = gen_args.inp_degree_ast  # input degree assortativity
+        self.inp_attr_ast = gen_args.inp_attr_ast  # input attribute assortativity
+        self.alpha = gen_args.alpha
+        self.mapping = {val: i for i, val in
+                        enumerate(gen_args.inp_mixing_dict.keys())}  # maps attr values to numbers from 0
         return
 
     # @profile
