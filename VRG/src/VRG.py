@@ -3,12 +3,11 @@ refactored VRG
 '''
 import abc
 import logging
-from typing import List, Dict
+from typing import List, Dict, Any
 
 import networkx as nx
 
 from VRG.src.Rule import VRGRule, NCERule
-from VRG.src.program_args import GrammarArgs
 from VRG.src.utils import node_matcher_strict, edge_matcher
 
 
@@ -19,7 +18,7 @@ class BaseVRG(abc.ABC):
 
     # __slots__ = ('name', 'grammar_type', 'extract_type', 'clustering', 'mu', 'rule_list', 'rule_dict', 'cost', 'num_rules')
 
-    def __init__(self, grammar_args: GrammarArgs):
+    def __init__(self, grammar_args: Any):
         self.grammar_args = grammar_args
 
         self.name: str = grammar_args.name  # name of the graph
@@ -130,7 +129,7 @@ class VRG(BaseVRG):
 
 
 class AttributedVRG(VRG):
-    def __init__(self, grammar_args: GrammarArgs):
+    def __init__(self, grammar_args: Any):
         super().__init__(grammar_args=grammar_args)
         self.attr_name = grammar_args.program_args.attr_name
         return
