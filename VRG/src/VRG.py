@@ -19,7 +19,7 @@ class BaseVRG(abc.ABC):
     # __slots__ = ('name', 'grammar_type', 'extract_type', 'clustering', 'mu', 'rule_list', 'rule_dict', 'cost', 'num_rules')
 
     def __init__(self, grammar_args: Any):
-        self.grammar_args = grammar_args
+        self.grammar_args: Any = grammar_args
 
         self.name: str = grammar_args.name  # name of the graph
         self.grammar_type: str = grammar_args.grammar_type
