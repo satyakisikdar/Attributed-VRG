@@ -180,7 +180,7 @@ def load_pickle(fname):
 
 
 def dump_pickle(obj, fname):
-    logging.error(f'Dumping pickle at {fname!r}')
+    logging.debug(f'Dumping pickle at {fname!r}')
     pickle.dump(obj, open(fname, 'wb'))
     return
 
