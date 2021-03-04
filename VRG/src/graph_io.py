@@ -1,9 +1,9 @@
 """
 Graph i/o helpers
 """
-import math
 from pathlib import Path
 
+import math
 import networkx as nx
 import numpy as np
 
@@ -106,12 +106,12 @@ class GraphReader:
 
         if reindex_nodes:
             # re-index nodes, stores the old label in old_label
-            self.graph = nx.convert_node_labels_to_integers(self.graph, first_label=first_label,
+            self.graph = nx.convert_node_labels_to_integers(self.graph, first_label=first_label, ordering='sorted',
                                                             label_attribute='old_label')
             CP.print_none(
                 f'Re-indexing nodes to start from {first_label}, old labels are stored in node attr "old_label"')
 
-        CP.print_none(f'Pre-processed graph "{self.gname}" n:{self.graph.order():,} m:{self.graph.size():,}')
+        CP.print_blue(f'Pre-processed graph "{self.gname}" n:{self.graph.order():,} m:{self.graph.size():,}')
         return
 
     def __str__(self) -> str:
