@@ -136,7 +136,7 @@ class BaseGenerator(abc.ABC):
         #     things = parallel(delayed(self._generate)(i) for i in range(num_graphs))
         # tqdm.write(f'Generating {num_graphs} graphs for')
 
-        with tqdm(total=num_graphs, ncols=150) as pbar:
+        with tqdm(total=num_graphs, ncols=100) as pbar:
             things = []
             for i in range(num_graphs):
                 things.append(self._generate(i))
