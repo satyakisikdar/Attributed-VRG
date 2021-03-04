@@ -84,6 +84,9 @@ class HierarchicalClustering:
         """
         Compute height of the tree, avg branching factor, dasgupta cost
         """
+        if self.root.height == 0:
+            logging.error(f'Clustering failed for {self.name!r} {self.clustering!r}!')
+            return dict()
         ht = self.root.height
         branch_factors = [len(node.children) for node in LevelOrderIter(self.root) if len(node.children) > 1]
         avg_branch_factor = mean(branch_factors)
