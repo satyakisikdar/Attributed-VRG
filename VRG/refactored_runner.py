@@ -24,20 +24,29 @@ def read_graph(name: str, path: str = '', basedir: str = '/data/ssikdar/Attribut
     return greader.graph
 
 
-def ensure_dirs(prog_args: ProgramArgs):
+def ensure_dirs(basedir: str, name: str):
     subdirs = 'grammars', 'trees', 'graphs', 'snapshots', 'jsons'
 
     for dir_ in subdirs:
-        dir_path = Path(join(prog_args.basedir, 'output', dir_))
+        dir_path = Path(join(basedir, 'output', dir_))
         if not dir_path.exists():
             logging.error(f'Making new directory: {dir_path!r}')
             os.makedirs(dir_path, exist_ok=True)
 
-        name_dir_path = dir_path / prog_args.name
+        name_dir_path = dir_path / name
         if not name_dir_path.exists():
             logging.error(f'Making new directory: {name_dir_path.stem!r}')
             os.makedirs(name_dir_path, exist_ok=True)
     return
+
+
+def get_clustering(prog_args: ProgramArgs, input_graph: nx.Graph) -> HierarchicalClustering:
+    assert prog_args.clustering != '', f'Clustering not properly set in ProgramArgs'
+    hc = HierarchicalClustering(prog_args=prog_args, input_graph=input_graph)
+    hc.get_clustering()
+    # hc.calculate_cost()
+    print(hc.stats)
+    return hc
 
 
 def get_grammar(gram_args: GrammarArgs):
@@ -124,17 +133,15 @@ def get_graphs(gen_args: GenerationArgs):
 def main():
     name = 'karate'
     clustering = 'cond'
+
     input_graph = read_graph(name=name)
     prog_args = ProgramArgs(name=name, clustering=clustering)
 
     prog_args.use_graphs_pickle = True
     prog_args.write_snapshots = True
-    ensure_dirs(prog_args)
+    ensure_dirs(basedir=prog_args.basedir, name=name)
 
-    hc = HierarchicalClustering(prog_args=prog_args, input_graph=input_graph)
-    root = hc.get_clustering()
-    hc.calculate_cost()
-    print(hc.stats)
+    hc = get_clustering(prog_args=prog_args, input_graph=input_graph)
 
     extract_type = 'mu-level'
     mu = 5
