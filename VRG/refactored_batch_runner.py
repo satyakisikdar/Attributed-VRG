@@ -2,20 +2,26 @@
 Refactored batch runner -- clustering, grammar extraction, graph generation
 """
 import logging
+import os
 import sys
 from glob import glob
 from os.path import join
 from pathlib import Path
 from typing import List, Iterable
 
-from VRG.src.VRG import AttributedVRG
-from VRG.src.utils import load_pickle
-
 sys.path.extend(['../', '../../', './', '../../../', '/home/ssikdar/tmp_dir'])
 
+from VRG.src.VRG import AttributedVRG
+from VRG.src.utils import load_pickle
 from VRG.refactored_runner import read_graph, ensure_dirs, get_clustering, get_grammar, get_graphs
 from VRG.src.parallel import parallel_async
 from VRG.src.program_args import ProgramArgs, GrammarArgs, GenerationArgs
+
+os.environ['OMP_NUM_THREADS'] = '4'  # export OMP_NUM_THREADS=4
+os.environ['OPENBLAS_NUM_THREADS'] = '4'  # export OPENBLAS_NUM_THREADS=4
+os.environ['MKL_NUM_THREADS'] = '4'  # export MKL_NUM_THREADS=6
+os.environ['VECLIB_MAXIMUM_THREADS'] = '4'  # export VECLIB_MAXIMUM_THREADS=4
+os.environ['NUMEXPR_NUM_THREADS'] = '4'  # export NUMEXPR_NUM_THREADS=6
 
 sys.setrecursionlimit(1_000_000)
 
@@ -124,15 +130,16 @@ def run_batch_generations(basedir: str, names: List[str], clusterings: List[str]
 
 def main():
     basedir = '/data/ssikdar/AVRG'
-    names = ['football', 'polbooks', 'wisconsin', 'texas', 'cornell', 'cora', 'citeseer',
-             'polblogs', 'airports', 'film', 'chameleon', 'squirrel', 'pubmed'][: 3]
+    names = ['polbooks', 'football', 'wisconsin', 'texas', 'cornell', 'cora', 'citeseer',
+             'polblogs', 'airports', 'film', 'chameleon', 'pubmed', 'squirrel'][: 9]
 
     clusterings = ['cond', 'spectral', 'leiden', 'louvain', 'infomap', 'labelprop', 'random']
-    mus = range(3, 5)
+    mus = range(3, 11)
 
-    # run_batch_clusters(names=names, clusterings=clusterings, num_workers=4, basedir=basedir)
+    # names = ['chameleon']
+    # run_batch_clusters(names=names, clusterings=clusterings, num_workers=8, basedir=basedir)
     # run_batch_grammars(basedir=basedir, names=names, clusterings=clusterings, mus=mus, num_workers=4, overwrite=False)
-    run_batch_generations(basedir=basedir, names=names, clusterings=clusterings, mus=mus, num_workers=4,
+    run_batch_generations(basedir=basedir, names=names, clusterings=clusterings, mus=mus, num_workers=8,
                           overwrite=False)
     return
 

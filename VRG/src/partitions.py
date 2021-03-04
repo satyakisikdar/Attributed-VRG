@@ -5,6 +5,7 @@ Contains the different partition methods
 3. Leiden and Louvain methods
 """
 import logging
+import os
 import random
 from typing import Union
 
@@ -14,6 +15,12 @@ import networkx as nx
 import scipy.sparse.linalg
 import sklearn.preprocessing
 from sklearn.cluster import KMeans
+
+os.environ["OMP_NUM_THREADS"] = "4"  # export OMP_NUM_THREADS=4
+os.environ["OPENBLAS_NUM_THREADS"] = "4"  # export OPENBLAS_NUM_THREADS=4
+os.environ["MKL_NUM_THREADS"] = "4"  # export MKL_NUM_THREADS=6
+os.environ["VECLIB_MAXIMUM_THREADS"] = "4"  # export VECLIB_MAXIMUM_THREADS=4
+os.environ["NUMEXPR_NUM_THREADS"] = "4"  # export NUMEXPR_NUM_THREADS=6
 
 
 def louvain_leiden_infomap_label_prop(g: Union[ig.Graph, nx.Graph, nx.DiGraph], method: str = 'leiden'):

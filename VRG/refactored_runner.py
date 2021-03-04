@@ -6,6 +6,8 @@ from pathlib import Path
 
 import networkx as nx
 
+sys.path.extend(['../', '../../'])
+
 from VRG.src.HierClustering import HierarchicalClustering
 from VRG.src.extract import AVRGExtractor
 from VRG.src.generate import GreedyAttributeRandomGenerator, AttributedRandomGenerator
@@ -17,11 +19,13 @@ from VRG.src.utils import check_file_exists, load_pickle, dump_pickle
 logging.basicConfig(stream=sys.stdout, level=logging.ERROR)
 
 
-def read_graph(name: str, path: str = '', basedir: str = '/data/ssikdar/Attributed-VRG') -> nx.Graph:
+def read_graph(name: str, path: str = '', basedir: str = '/data/ssikdar/AVRG') -> nx.Graph:
     if path == '':
         path = join(basedir, 'input', f'{name}.gml')
-    greader = GraphReader(filename=path, gname=name, reindex_nodes=True)
-    return greader.graph
+    greader = GraphReader(filename=path, gname=name, reindex_nodes=False)
+    graph = greader.graph
+    assert graph.nodes[0]
+    return graph
 
 
 def ensure_dirs(basedir: str, name: str):
