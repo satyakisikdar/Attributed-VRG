@@ -44,9 +44,11 @@ def ensure_dirs(basedir: str, name: str):
     return
 
 
-def get_clustering(prog_args: ProgramArgs, input_graph: nx.Graph) -> HierarchicalClustering:
+def get_clustering(prog_args: ProgramArgs, input_graph: nx.Graph, root_pickle_path: str = '') -> HierarchicalClustering:
     assert prog_args.clustering != '', f'Clustering not properly set in ProgramArgs'
     hc = HierarchicalClustering(prog_args=prog_args, input_graph=input_graph)
+    if root_pickle_path != '':
+        hc.root_pickle_filename = root_pickle_path
     hc.get_clustering()
     # hc.calculate_cost()
     print(hc.stats)
