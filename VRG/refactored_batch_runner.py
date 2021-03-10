@@ -9,6 +9,8 @@ from os.path import join
 from pathlib import Path
 from typing import List, Iterable
 
+import networkx as nx
+
 sys.path.extend(['../', '../../', './', '../../../', '/home/ssikdar/tmp_dir'])
 
 from VRG.src.VRG import AttributedVRG
@@ -24,6 +26,107 @@ os.environ['VECLIB_MAXIMUM_THREADS'] = '4'  # export VECLIB_MAXIMUM_THREADS=4
 os.environ['NUMEXPR_NUM_THREADS'] = '4'  # export NUMEXPR_NUM_THREADS=6
 
 sys.setrecursionlimit(1_000_000)
+
+
+def run_cabam_clusters(basedir: str, graphs: List[nx.Graph], clusterings: List[str], num_workers: int = 8,
+                       overwrite: bool = False):
+    args_list = []
+
+    for idx, input_graph in enumerate(graphs):
+        name = f'cabam-{idx}'
+        for clustering in clusterings:
+            prog_args = ProgramArgs(name=name, clustering=clustering)
+            root_pickle_path = join(basedir, 'output', 'trees/cabam', f'{name}_{clustering}_root.pkl')
+
+            if not overwrite and Path(root_pickle_path).exists():  # skip over the clusterings that are already computed
+                continue
+
+            args_list.append((prog_args, input_graph, root_pickle_path))
+
+    try:
+        parallel_async(func=get_clustering, args=args_list, num_workers=num_workers)
+    except Exception as e:
+        logging.error(e)
+    return
+
+
+def run_cabam_grammars(basedir: str, graphs: List[nx.Graph], clusterings: List[str], mus: Iterable,
+                       num_workers: int = 8,
+                       overwrite: bool = False):
+    extract_types = 'mu-level', 'mu-random'  # , 'all-tnodes'
+
+    grammar_args_list = []
+    for idx, input_graph in enumerate(graphs):
+        name = f'cabam-{idx}'
+        for clustering in clusterings:
+            prog_args = ProgramArgs(name=name, clustering=clustering)
+            root_pickle_path = join(basedir, 'output/trees/cabam', f'{name}_{clustering}_root.pkl')
+            hc = get_clustering(prog_args=prog_args, input_graph=input_graph, root_pickle_path=root_pickle_path)
+            if hc.root is None:
+                logging.error(f'Error in {clustering!r} alg for {name!r}. Skipping!')
+                continue
+
+            for extract_type in extract_types:
+                for mu in mus:
+                    grammar_args = GrammarArgs(program_args=prog_args, hc_obj=hc, extract_type=extract_type, mu=mu)
+                    grammar_args.grammar_filename = join(basedir, 'output/grammars/cabam',
+                                                         f'{name}_{grammar_args.grammar_info}.pkl')
+                    if overwrite and Path(grammar_args.grammar_filename).exists():
+                        continue
+                    grammar_args_list.append((grammar_args,))  # has to be a tuple
+
+            # make one for the all-tnodes
+            grammar_args = GrammarArgs(program_args=prog_args, hc_obj=hc, extract_type='all-tnodes', mu=0)
+            grammar_args.grammar_filename = join(basedir, 'output/grammars/cabam',
+                                                 f'{name}_{grammar_args.grammar_info}.pkl')
+            if overwrite and Path(grammar_args.grammar_filename).exists():
+                continue
+            grammar_args_list.append((grammar_args,))  # has to be a tuple
+
+    try:
+        parallel_async(func=get_grammar, args=grammar_args_list, num_workers=num_workers)
+    except Exception as e:
+        print(e)
+
+    return
+
+
+def run_cabam_graphs(basedir: str, graphs: List[nx.Graph], clusterings: List[str], mus: Iterable, num_workers: int = 8,
+                     overwrite: bool = False):
+    # run generation only for existing grammars
+    # get grammar_args from the pickled grammars
+    gen_args_list = []
+    gen_types = 'mix', 'random', 'greedy-deg', 'greedy-50', 'greedy-attr'
+
+    grammar_dir = join(basedir, 'output/grammars/cabam/')
+    names = [f'cabam-{i}' for i in range(len(graphs))]
+
+    for name in names:
+        for grammar_filename in glob(f'{grammar_dir}/{name}_*.pkl'):
+            grammar: AttributedVRG = load_pickle(grammar_filename)
+            if grammar is None:
+                continue
+
+            grammar_args: GrammarArgs = grammar.grammar_args
+
+            for gen_type in gen_types:
+                gen_args = GenerationArgs(gen_type=gen_type, grammar=grammar, grammar_args=grammar_args)
+                gen_args.graphs_filename = join(basedir, 'output/graphs/cabam',
+                                                f'{name}_{grammar_args.grammar_info}_{gen_args.graphs_info}.pkl')
+
+                if gen_args.clustering not in clusterings:
+                    logging.error(f'Skipping {name!r} {grammar.clustering!r} {gen_type!r}')
+                    continue
+                if not overwrite and Path(gen_args.graphs_filename).exists():
+                    logging.error(f'Skipping {name!r} {grammar.clustering!r} {gen_type!r}')
+                    continue
+                gen_args_list.append((gen_args,))  # has to be a tuple
+
+    # try:
+    parallel_async(func=get_graphs, args=gen_args_list, num_workers=num_workers)
+    # except Exception as e:
+    #     print(e)
+    return
 
 
 def run_batch_clusters(basedir: str, names: List[str], clusterings: List[str], num_workers: int = 8,
@@ -119,23 +222,42 @@ def run_batch_generations(basedir: str, names: List[str], clusterings: List[str]
 
             for gen_type in gen_types:
                 gen_args = GenerationArgs(gen_type=gen_type, grammar=grammar, grammar_args=grammar_args)
+                if gen_args.clustering not in clusterings:
+                    logging.error(f'Skipping {name!r} {grammar.clustering!r} {gen_type!r}')
+                    continue
                 if not overwrite and Path(gen_args.graphs_filename).exists():
                     logging.error(f'Skipping {name!r} {grammar.clustering!r} {gen_type!r}')
                     continue
                 gen_args_list.append((gen_args,))  # has to be a tuple
 
-    parallel_async(func=get_graphs, args=gen_args_list, num_workers=num_workers)
+    try:
+        parallel_async(func=get_graphs, args=gen_args_list, num_workers=num_workers)
+    except Exception as e:
+        print(e)
+    return
+
+
+def cabam_runner():
+    basedir = '/data/ssikdar/AVRG'
+    cabam_graphs = load_pickle(join(basedir, 'input', 'cabam.graphs'))
+    # clusterings = ['cond', 'spectral', 'leiden', 'louvain', 'infomap', 'labelprop', 'random']
+    clusterings = ['cond', 'leiden', 'hyphc']
+    # mus = range(3, 11)
+    mus = [5]
+    # run_cabam_clusters(basedir=basedir, graphs=cabam_graphs, clusterings=clusterings, num_workers=4)
+    # run_cabam_grammars(basedir=basedir, graphs=cabam_graphs, clusterings=clusterings, num_workers=4, mus=mus)
+    run_cabam_graphs(basedir=basedir, graphs=cabam_graphs, clusterings=clusterings, num_workers=4, mus=mus)
     return
 
 
 def main():
     basedir = '/data/ssikdar/AVRG'
     names = ['polbooks', 'football', 'wisconsin', 'texas', 'cornell', 'cora', 'citeseer',
-             'polblogs', 'airports', 'film', 'chameleon', 'pubmed', 'squirrel'][: 9]
+             'polblogs', 'airports', 'film', 'chameleon', 'pubmed', 'squirrel'][: 7]
 
-    clusterings = ['cond', 'spectral', 'leiden', 'louvain', 'infomap', 'labelprop', 'random']
+    # clusterings = ['cond', 'spectral', 'leiden', 'louvain', 'infomap', 'labelprop', 'random']
+    clusterings = ['hyphc']
     mus = range(3, 11)
-
     # names = ['chameleon']
     # run_batch_clusters(names=names, clusterings=clusterings, num_workers=8, basedir=basedir)
     # run_batch_grammars(basedir=basedir, names=names, clusterings=clusterings, mus=mus, num_workers=4, overwrite=False)
@@ -145,4 +267,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+    cabam_runner()
