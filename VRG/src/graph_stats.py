@@ -7,6 +7,8 @@ import sys
 from collections import Counter, deque
 from typing import Dict, Tuple, List, Any
 
+from VRG.src.utils import nx_to_igraph
+
 sys.path.extend(['./../', './../../'])
 print('sys path: ', sys.path)
 import editdistance as ed
@@ -137,14 +139,38 @@ class GraphStats:
         plt.legend(loc='best')
         return ax
 
-    def shortest_path_ast(self, alpha: float) -> float:
+    def _make_igraph_if_necessary(self, fname=None):
         if self.ig_graph is None:
-            self.ig_graph = ig.Graph.from_networkx(self.graph)
+            if fname is not None:
+                self.ig_graph = ig.Graph.Read_GML(fname)
+            else:
+                self.ig_graph = nx_to_igraph(self.graph)
+        return
+
+    def average_path_length(self) -> float:
+        self._make_igraph_if_necessary()
+        assert self.ig_graph is not None
+        apl = self.ig_graph.average_path_length(directed=False, unconn=True)
+        self.stats['average_path_length'] = apl
+        return apl
+
+    def average_clustering(self) -> float:
+        self._make_igraph_if_necessary()
+        assert self.ig_graph is not None
+        avg_cl = self.ig_graph.transitivity_avglocal_undirected(mode='zero')
+        self.stats['average_clustering'] = avg_cl
+        return avg_cl
+
+    def shortest_path_ast(self, alpha: float, fname=None) -> float:
+        self._make_igraph_if_necessary(fname=fname)
+        assert self.ig_graph is not None
+
         n = self.ig_graph.vcount()
-
         d = np.array(self.ig_graph.degree()).reshape(n, 1)
+        if 'apsp_matrix' not in self.stats:
+            self.stats['apsp_matrix'] = np.array(self.ig_graph.shortest_paths())
 
-        H = np.array(self.ig_graph.shortest_paths())
+        H = self.stats['apsp_matrix']
         H_alpha = np.float_power(H, -alpha)
         np.fill_diagonal(H_alpha, 0)
 
@@ -161,8 +187,18 @@ class GraphStats:
         num = np.matmul(np.matmul(d.T, X), d)
         denom = np.matmul(np.matmul(d.T, Y), d)
         shortest_path_ast = (num / denom).item()
-        self.stats[f'shortest_path_ast_{alpha}'] = shortest_path_ast
+        self.stats[f'shortest_path_ast_{int(alpha * 100)}'] = shortest_path_ast
         return shortest_path_ast
+
+    def degree_mixing_dict(self, normalized: bool = True) -> np.array:
+        dict = nx.degree_mixing_dict(self.graph, normalized=normalized)
+        self.stats['degree_mixing_dict'] = dict
+        return dict
+
+    def attr_mixing_dict(self, attr_name: str = 'value', normalized: bool = True) -> np.array:
+        dict = nx.attribute_mixing_dict(self.graph, attribute=attr_name, normalized=normalized)
+        self.stats['attr_mixing_dict'] = dict
+        return dict
 
     def degree_mixing_matrix(self, normalized: bool = True) -> np.array:
         mat = nx.degree_mixing_matrix(self.graph, normalized=normalized)
@@ -190,8 +226,8 @@ class GraphStats:
         """
         Use Leiden alg to find (a) the number of communities and (b) modularity
         """
-        if self.ig_graph is None:
-            self.ig_graph = ig.Graph.from_networkx(self.graph)
+        self._make_igraph_if_necessary()
+        assert self.ig_graph is not None
         partition = self.ig_graph.community_leiden(n_iterations=-1, objective_function='modularity')
         self.stats['num_clusters'] = len(partition)
         self.stats['modularity'] = partition.modularity
@@ -233,12 +269,12 @@ class GraphStats:
         Returns the degree assortativity of the network
         :return:
         """
-        if self.ig_graph is None:
-            self.ig_graph = ig.Graph.from_networkx(self.graph)
+        # self._make_igraph_if_necessary()
+        # assert self.ig_graph is not None
         CP.print_none('Calculating Degree Assortativity')
 
-        assortativity = self.ig_graph.assortativity_degree(directed=False)
-        # assortativity = nx.degree_assortativity_coefficient(self.graph)
+        # assortativity = self.ig_graph.assortativity_degree(directed=False)
+        assortativity = nx.degree_assortativity_coefficient(self.graph)
         self.stats['degree_assortativity'] = assortativity
 
         return assortativity
@@ -340,8 +376,12 @@ class GraphStats:
 
     def diameter(self) -> float:
         CP.print_none('Calculating Diameter')
+        self._make_igraph_if_necessary()
+        assert self.ig_graph is not None
 
-        diam = self.ig_graph.diameter(directed=False)
+        if self.stats['apsp_matrix'] is None:
+            self.stats['apsp_matrix'] = np.array(self.ig_graph.shortest_paths())
+        diam = np.max(self.stats['apsp_matrix'])
         self.stats['diameter'] = diam
 
         return diam
@@ -420,10 +460,10 @@ class GraphStats:
         PageRank centrality
         """
         CP.print_none('Calculating PageRank')
-        # if self.ig_graph is None:
-        #     self.ig_graph = ig.Graph.from_networkx(self.graph)
-        # pagerank = self.ig_graph.pagerank(directed=False)
-        pagerank = nx.pagerank_scipy(self.graph)
+        self._make_igraph_if_necessary()
+        assert self.ig_graph is not None
+        pagerank = {i: pr for i, pr in enumerate(self.ig_graph.pagerank(directed=False))}
+        # pagerank = nx.pagerank_scipy(self.graph)
         self.stats['pagerank'] = pagerank
 
         return pagerank
