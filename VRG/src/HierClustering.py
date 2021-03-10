@@ -51,7 +51,7 @@ class HierarchicalClustering:
             if pickled_root is None:
                 logging.error(f'Error in pickle! {self.name!r} {self.clustering!r}')
             else:
-                logging.error(f'Using pickled root {self.name!r} {self.clustering!r}!')
+                logging.debug(f'Using pickled root {self.name!r} {self.clustering!r}!')
                 self.root = pickled_root
                 self.stats.update(self.get_tree_stats())
                 return
@@ -69,9 +69,15 @@ class HierarchicalClustering:
         elif self.clustering == 'cond':
             list_of_list_clusters = approx_min_conductance_partitioning(g=self.input_graph)
         elif self.clustering == 'hyphc':
-            raise NotImplementedError()
+            root_pickle_path = join(self.prog_args.basedir, 'output/trees', self.name, 'hyphc_root.pkl')
+            if Path(root_pickle_path).exists():
+                self.root = load_pickle(root_pickle_path)
+            else:
+                logging.error(f'HypHC pickle not found')
+                return None
 
-        self.root = create_tree(list_of_list_clusters)
+        if self.clustering != 'hyphc':
+            self.root = create_tree(list_of_list_clusters)
         end_time = time.perf_counter()
         dump_pickle(self.root, self.root_pickle_filename)
 
